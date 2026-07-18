@@ -1,0 +1,44 @@
+schema: spec-driven
+
+context: |
+  Project: Arte Colibrí — a curated online showcase of artwork by local artists,
+  presented as a community. A first-time visitor should immediately understand the
+  site features *curated* work from *local* artists.
+
+  Tech stack:
+  - Backend: Django with GeoDjango (django.contrib.gis) on PostgreSQL/PostGIS,
+    exposing a JSON HTTP API via Django REST Framework under /api/.
+    Project root is geodjango/; single app `world` (models in world/models/ package).
+  - Frontend: a ReactJS single-page app (Vite) in frontend/, consuming the /api/ JSON
+    contract. Bilingual (Spanish-first, EN toggle). This supersedes the earlier
+    "server-rendered Django templates + Bootstrap, no SPA" approach. The bespoke design
+    system (warm off-white #FAF8F4, ink #1B1A17, teal accent #117360, magenta #E0457B
+    used sparingly; Fraunces + Inter + JetBrains Mono) is ported as plain CSS.
+    User-uploaded media is served under /media/. (SSR/prerender for SEO is a follow-up.)
+  - Scheduling: django-apscheduler (in-process). Runs in Docker (see scripts/dev.sh, scripts/prod.sh).
+
+  Product conventions:
+  - Curation is EDITORIAL: artwork is gated by an approval workflow; only approved
+    content is publicly visible.
+  - Commerce is "display price + inquire" — NO cart/checkout/payments.
+  - Location ("local artists") is a SECONDARY section, not the headline feature.
+  - Prefer a dedicated /dashboard for managing content over raw Django admin.
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
