@@ -36,7 +36,7 @@ export function Footer({ onApply }) {
           </div>
           <div className="foot__col foot__contact">
             <h4>{lang === "es" ? "Estudio" : "Studio"}</h4>
-            <p>Calle Orizaba 87<br />Roma Norte, 06700<br />Ciudad de México</p>
+            <p>Tlacotalpan 128<br />Roma Sur, 06760<br />Ciudad de México</p>
             <p>hola@artecolibri.mx</p>
           </div>
         </div>
