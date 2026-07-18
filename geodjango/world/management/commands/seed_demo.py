@@ -7,6 +7,7 @@ seed is faithful to the design without bundling binaries.
     python manage.py seed_demo
 """
 
+import re
 from decimal import Decimal
 
 from django.conf import settings
@@ -24,6 +25,13 @@ from world.models import (
     Region,
     Tag,
 )
+
+
+def _parse_dims(s):
+    """Parse a legacy `"W × H [× D] cm"` string into width/height/depth numbers."""
+    nums = [Decimal(n) for n in re.findall(r"[\d.]+", s or "")][:3]
+    keys = ["width", "height", "depth"]
+    return {keys[i]: nums[i] for i in range(len(nums))}
 
 User = get_user_model()
 
@@ -337,6 +345,7 @@ class Command(BaseCommand):
 
         # Artworks + images (published)
         for w in ARTWORKS:
+            dims = _parse_dims(w["dimensions"])  # "W × H [× D] cm" → numbers
             artwork, _ = Artwork.objects.update_or_create(
                 slug=w["slug"],
                 defaults={
@@ -346,7 +355,9 @@ class Command(BaseCommand):
                     "year": w["year"],
                     "medium_es": w["medium_es"],
                     "medium_en": w["medium_en"],
-                    "dimensions": w["dimensions"],
+                    "width": dims.get("width"),
+                    "height": dims.get("height"),
+                    "depth": dims.get("depth"),
                     "price": Decimal(w["price"]) if w["price"] else None,
                     "availability": w["availability"],
                     "featured": w["featured"],

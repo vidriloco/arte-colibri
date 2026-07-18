@@ -173,7 +173,7 @@ class OwnershipTests(APITestCase):
         tok = self._token("owner2")
         r = self.client.patch(
             f"/api/dashboard/artworks/{self.w1.id}/",
-            {"dimensions": "hax"},
+            {"year": 1999},
             format="json",
             HTTP_AUTHORIZATION=f"Token {tok}",
         )
@@ -709,7 +709,9 @@ class ArtworkFormFieldsTests(APITestCase):
                 "title": {"es": "Obra", "en": ""},
                 "description": {"es": "Una descripción", "en": ""},
                 "medium": {"es": "Óleo", "en": ""},
-                "dimensions": "60x80",
+                "width": "80",
+                "height": "60",
+                "weight": "2.5",
                 "year": 2025,
                 "price": "1000",
                 "availability": "sold",
@@ -725,6 +727,10 @@ class ArtworkFormFieldsTests(APITestCase):
         self.assertEqual(art.description_en, "")      # blank, not duplicated from Spanish
         self.assertEqual(art.availability, "sold")
         self.assertEqual(str(art.sold_price), "1500.00")
+        # Structured measurements persist; the public string is composed from them.
+        self.assertEqual(str(art.width), "80.00")
+        self.assertEqual(str(art.weight), "2.50")
+        self.assertEqual(art.dimensions_display, "80 × 60 cm")
         # Read-back exposes English as empty string (display falls back client-side).
         self.assertEqual(r.json()["title"]["en"], "")
         self.assertEqual(r.json()["sold_price"], "1500.00")

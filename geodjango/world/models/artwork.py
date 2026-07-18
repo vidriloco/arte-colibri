@@ -51,7 +51,11 @@ class Artwork(ModeratedModel):
     medium_es = models.CharField(max_length=200, blank=True, default="")
     medium_en = models.CharField(max_length=200, blank=True, default="")
 
-    dimensions = models.CharField(max_length=120, blank=True, default="")
+    # Structured, optional measurements — dimensions in cm, weight in kg.
+    width = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    height = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    depth = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    weight = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     year = models.PositiveIntegerField(null=True, blank=True)
 
     price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -76,6 +80,14 @@ class Artwork(ModeratedModel):
 
     def __str__(self):
         return self.title_es
+
+    @property
+    def dimensions_display(self):
+        """Human-readable `W × H × D cm` from the numeric fields (blank if none)."""
+        parts = [p for p in (self.width, self.height, self.depth) if p is not None]
+        if not parts:
+            return ""
+        return " × ".join("%g" % float(p) for p in parts) + " cm"
 
     @property
     def primary_image(self):

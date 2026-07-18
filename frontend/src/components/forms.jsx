@@ -204,7 +204,10 @@ const emptyArtwork = (a) => {
   // A known technique preselects its option; anything else → "Otra" + free text.
   mediumSel: mediumEs ? (known ? mediumEs : MEDIA_OTHER) : "",
   mediumCustom: known ? "" : mediumEs,
-  dimensions: a?.dimensions || "",
+  width: a?.width != null ? String(parseFloat(a.width)) : "",
+  height: a?.height != null ? String(parseFloat(a.height)) : "",
+  depth: a?.depth != null ? String(parseFloat(a.depth)) : "",
+  weight: a?.weight != null ? String(parseFloat(a.weight)) : "",
   year: a?.year || new Date().getFullYear(),
   price: a?.price ? String(parseFloat(a.price)) : "",
   availability: a?.availability || "available",
@@ -240,7 +243,7 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
     const tech = mediumOtra ? null : findTechniqueByEs(form.mediumSel);
     const mediumEsVal = (mediumOtra ? form.mediumCustom : form.mediumSel).trim();
     if (!mediumEsVal) er.medium = t("form_required");
-    if (!form.dimensions.trim()) er.dimensions = t("form_required");
+    // width/height/depth/weight are all optional.
     if (form.availability !== "nfs" && !String(form.price).trim()) er.price = t("form_required");
     if (!form.description.trim()) er.description = t("form_required");
     setErrors(er);
@@ -252,11 +255,15 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
     const medium = tech
       ? { es: tech.es, en: tech.en }
       : { es: mediumEsVal, en: mediumEsVal };
+    const num = (v) => (String(v).trim() ? Number(v) : null);
     const payload = {
       title: { es: form.titleEs, en: form.titleEn },
       medium,
       description: { es: form.description, en: form.descriptionEn },
-      dimensions: form.dimensions,
+      width: num(form.width),
+      height: num(form.height),
+      depth: num(form.depth),
+      weight: num(form.weight),
       year: Number(form.year),
       price: form.availability === "nfs" ? null : form.price,
       sold_price: soldPrice,
@@ -351,20 +358,29 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
                      value={form.mediumCustom} onChange={(e) => set("mediumCustom", e.target.value)} />
             )}
           </ApplyField>
-          <ApplyField label={t("apply_dimensions")} error={errors.dimensions} required>
-            <input type="text" placeholder={t("apply_dimensions_ph")} value={form.dimensions} onChange={(e) => set("dimensions", e.target.value)} />
-          </ApplyField>
-        </div>
-        <div className="apply__row apply__row--2">
           <ApplyField label={t("apply_year")}>
             <input type="number" min="1900" max="2030" value={form.year} onChange={(e) => set("year", e.target.value)} />
           </ApplyField>
+        </div>
+        <div className="apply__row apply__row--4">
+          <ApplyField label={t("apply_width")}>
+            <input type="number" min="0" step="0.1" placeholder="cm" value={form.width} onChange={(e) => set("width", e.target.value)} />
+          </ApplyField>
+          <ApplyField label={t("apply_height")}>
+            <input type="number" min="0" step="0.1" placeholder="cm" value={form.height} onChange={(e) => set("height", e.target.value)} />
+          </ApplyField>
+          <ApplyField label={t("apply_depth")}>
+            <input type="number" min="0" step="0.1" placeholder="cm" value={form.depth} onChange={(e) => set("depth", e.target.value)} />
+          </ApplyField>
+          <ApplyField label={t("apply_weight")}>
+            <input type="number" min="0" step="0.1" placeholder="kg" value={form.weight} onChange={(e) => set("weight", e.target.value)} />
+          </ApplyField>
+        </div>
+        <div className="apply__row apply__row--2">
           <ApplyField label={t("apply_price")} error={errors.price} required={form.availability !== "nfs"}>
             <input type="number" min="0" step="500" placeholder={t("apply_price_ph")} disabled={form.availability === "nfs"}
                    value={form.price} onChange={(e) => set("price", e.target.value)} />
           </ApplyField>
-        </div>
-        <div className="apply__row apply__row--2">
           <ApplyField label={t("apply_availability")}>
             <select value={form.availability} onChange={(e) => set("availability", e.target.value)}>
               <option value="available">{t("avail_available")}</option>
@@ -372,13 +388,13 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
               <option value="nfs">{t("apply_nfs")}</option>
             </select>
           </ApplyField>
-          {form.availability === "sold" ? (
-            <ApplyField label={t("apply_sold_price")} hint={t("apply_sold_price_hint")}>
-              <input type="number" min="0" step="500" placeholder={t("apply_price_ph")}
-                     value={form.soldPrice} onChange={(e) => set("soldPrice", e.target.value)} />
-            </ApplyField>
-          ) : <span aria-hidden="true" />}
         </div>
+        {form.availability === "sold" && (
+          <ApplyField label={t("apply_sold_price")} hint={t("apply_sold_price_hint")}>
+            <input type="number" min="0" step="500" placeholder={t("apply_price_ph")}
+                   value={form.soldPrice} onChange={(e) => set("soldPrice", e.target.value)} />
+          </ApplyField>
+        )}
         <ApplyField label={t("apply_tags")} hint={t("apply_tags_hint")}>
           <div className="apply__chips">
             {tags.map((tag) => (

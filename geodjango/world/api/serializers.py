@@ -79,6 +79,8 @@ class ArtworkListSerializer(serializers.ModelSerializer):
     artist_slug = serializers.SlugField(source="artist.slug", read_only=True)
     primary_image = serializers.SerializerMethodField()
     tags = serializers.SlugRelatedField(slug_field="slug", many=True, read_only=True)
+    # Composed "W × H × D cm" string from the numeric fields (public read).
+    dimensions = serializers.CharField(source="dimensions_display", read_only=True)
 
     class Meta:
         model = Artwork
@@ -205,7 +207,8 @@ class ArtworkOwnerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Artwork
         fields = [
-            "id", "slug", "title", "medium", "description", "dimensions",
+            "id", "slug", "title", "medium", "description",
+            "width", "height", "depth", "weight",
             "year", "price", "sold_price", "currency", "availability", "tags",
             "status", "featured", "images", "review_notes", "artist_slug",
         ]

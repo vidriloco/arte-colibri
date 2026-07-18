@@ -2837,6 +2837,7 @@ body[data-direction="codice"] .showcase__thumb .art-img {
   gap: 16px;
 }
 .apply__row--2 { grid-template-columns: 1fr 1fr; }
+.apply__row--4 { grid-template-columns: repeat(4, 1fr); }
 
 /* Field + inputs */
 .apply__field {
@@ -3124,6 +3125,7 @@ body[data-direction="codice"] .showcase__thumb .art-img {
   .apply { padding: 16px 12px; }
   .apply__panel { padding: 28px 20px 20px; }
   .apply__row--2 { grid-template-columns: 1fr; }
+  .apply__row--4 { grid-template-columns: 1fr 1fr; }
   .apply__price-row { grid-template-columns: 1fr; }
   .apply__nfs { justify-self: flex-start; }
   .apply__slots { grid-template-columns: 1fr; }
