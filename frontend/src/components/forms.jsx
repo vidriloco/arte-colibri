@@ -42,7 +42,29 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
   const [form, setForm] = React.useState(() => emptyProfile(artist));
   const [errors, setErrors] = React.useState({});
   const [saving, setSaving] = React.useState(false);
+  const [avatarUrl, setAvatarUrl] = React.useState(artist?.avatar || "");
+  const [avatarBusy, setAvatarBusy] = React.useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Avatar uploads persist immediately (≤ 200 KB, stored on S3). We don't call
+  // onSaved here so it doesn't advance any multi-step flow — just show the new one.
+  const onAvatar = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setAvatarBusy(true);
+    setErrors((x) => ({ ...x, avatar: null }));
+    try {
+      const fd = new FormData();
+      fd.append("avatar", file);
+      const saved = await Dash.uploadAvatar(fd);
+      setAvatarUrl(saved.avatar || "");
+    } catch (err) {
+      setErrors((x) => ({ ...x, avatar: err?.data?.avatar || t("error_b") }));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -74,6 +96,17 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
     <form className="apply__form" noValidate onSubmit={submit}>
       <fieldset className="apply__section">
         <legend className="apply__section-title">{t("apply_section_profile")}</legend>
+        <ApplyField label={t("apply_avatar")} error={errors.avatar} hint={t("apply_avatar_hint")}>
+          <div className="avatar-upload">
+            {avatarUrl
+              ? <img className="avatar-upload__img" src={avatarUrl} alt="" />
+              : <span className="avatar-upload__ph" aria-hidden="true">{artist?.initials || "○"}</span>}
+            <label className="btn btn--ghost btn--sm avatar-upload__btn">
+              {avatarBusy ? t("apply_avatar_busy") : t("apply_avatar_upload")}
+              <input type="file" accept="image/*" hidden disabled={avatarBusy} onChange={onAvatar} />
+            </label>
+          </div>
+        </ApplyField>
         <div className="apply__row apply__row--2">
           <ApplyField label={t("apply_city")} error={errors.city} required>
             <input type="text" value={form.city} onChange={(e) => set("city", e.target.value)} />
@@ -114,15 +147,17 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
 // ── Artwork form (create/edit + image management) ───────────────────────────
 const emptyArtwork = (a) => ({
   titleEs: bi(a?.title, "es") || "",
-  titleEn: bi(a?.title, "en") || "",
+  // Raw English (not the bi() fallback) so an unset English stays blank.
+  titleEn: a?.title?.en || "",
   medium: bi(a?.medium, "es") || "",
   dimensions: a?.dimensions || "",
   year: a?.year || new Date().getFullYear(),
   price: a?.price ? String(parseFloat(a.price)) : "",
-  nfs: a?.availability === "nfs",
   availability: a?.availability || "available",
+  soldPrice: a?.sold_price ? String(parseFloat(a.sold_price)) : "",
   tags: a?.tags || [],
   description: bi(a?.description, "es") || "",
+  descriptionEn: a?.description?.en || "",
 });
 
 export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
@@ -145,21 +180,26 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
   const persist = async () => {
     const er = {};
     if (!form.titleEs.trim()) er.titleEs = t("form_required");
-    if (!form.titleEn.trim()) er.titleEn = t("form_required");
+    // English title is optional — display falls back to Spanish.
     if (!form.medium.trim()) er.medium = t("form_required");
     if (!form.dimensions.trim()) er.dimensions = t("form_required");
-    if (!form.nfs && !String(form.price).trim()) er.price = t("form_required");
+    if (form.availability !== "nfs" && !String(form.price).trim()) er.price = t("form_required");
     if (!form.description.trim()) er.description = t("form_required");
     setErrors(er);
     if (Object.keys(er).length) return null;
+    const soldPrice =
+      form.availability === "sold" && String(form.soldPrice).trim()
+        ? form.soldPrice
+        : null;
     const payload = {
       title: { es: form.titleEs, en: form.titleEn },
       medium: { es: form.medium, en: form.medium },
-      description: { es: form.description, en: form.description },
+      description: { es: form.description, en: form.descriptionEn },
       dimensions: form.dimensions,
       year: Number(form.year),
-      price: form.nfs ? null : form.price,
-      availability: form.nfs ? "nfs" : form.availability,
+      price: form.availability === "nfs" ? null : form.price,
+      sold_price: soldPrice,
+      availability: form.availability,
       tags: form.tags,
     };
     const saved = current?.id
@@ -228,7 +268,7 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
           <ApplyField label={t("apply_title_es")} error={errors.titleEs} required>
             <input type="text" value={form.titleEs} onChange={(e) => set("titleEs", e.target.value)} />
           </ApplyField>
-          <ApplyField label={t("apply_title_en")} error={errors.titleEn} required>
+          <ApplyField label={t("apply_title_en")} hint={t("apply_en_optional")}>
             <input type="text" value={form.titleEn} onChange={(e) => set("titleEn", e.target.value)} />
           </ApplyField>
         </div>
@@ -244,16 +284,25 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
           <ApplyField label={t("apply_year")}>
             <input type="number" min="1900" max="2030" value={form.year} onChange={(e) => set("year", e.target.value)} />
           </ApplyField>
-          <ApplyField label={t("apply_price")} error={errors.price} required={!form.nfs}>
-            <div className="apply__price-row">
-              <input type="number" min="0" step="500" placeholder={t("apply_price_ph")} disabled={form.nfs}
-                     value={form.price} onChange={(e) => set("price", e.target.value)} />
-              <label className="apply__nfs">
-                <input type="checkbox" checked={form.nfs} onChange={(e) => set("nfs", e.target.checked)} />
-                <span>{t("apply_nfs")}</span>
-              </label>
-            </div>
+          <ApplyField label={t("apply_price")} error={errors.price} required={form.availability !== "nfs"}>
+            <input type="number" min="0" step="500" placeholder={t("apply_price_ph")} disabled={form.availability === "nfs"}
+                   value={form.price} onChange={(e) => set("price", e.target.value)} />
           </ApplyField>
+        </div>
+        <div className="apply__row apply__row--2">
+          <ApplyField label={t("apply_availability")}>
+            <select value={form.availability} onChange={(e) => set("availability", e.target.value)}>
+              <option value="available">{t("avail_available")}</option>
+              <option value="sold">{t("avail_sold")}</option>
+              <option value="nfs">{t("apply_nfs")}</option>
+            </select>
+          </ApplyField>
+          {form.availability === "sold" ? (
+            <ApplyField label={t("apply_sold_price")} hint={t("apply_sold_price_hint")}>
+              <input type="number" min="0" step="500" placeholder={t("apply_price_ph")}
+                     value={form.soldPrice} onChange={(e) => set("soldPrice", e.target.value)} />
+            </ApplyField>
+          ) : <span aria-hidden="true" />}
         </div>
         <ApplyField label={t("apply_tags")} hint={t("apply_tags_hint")}>
           <div className="apply__chips">
@@ -269,6 +318,9 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
         </ApplyField>
         <ApplyField label={t("apply_desc")} error={errors.description} required>
           <textarea rows={4} placeholder={t("apply_desc_ph")} value={form.description} onChange={(e) => set("description", e.target.value)} />
+        </ApplyField>
+        <ApplyField label={t("apply_desc_en")} hint={t("apply_en_optional")}>
+          <textarea rows={4} value={form.descriptionEn} onChange={(e) => set("descriptionEn", e.target.value)} />
         </ApplyField>
       </fieldset>
 

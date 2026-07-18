@@ -88,6 +88,7 @@ export const Dash = {
   profile: () => api.get("/dashboard/profile/"),
   saveProfile: (body) => api.patch("/dashboard/profile/", body),
   submitProfile: () => api.post("/dashboard/profile/", {}),
+  uploadAvatar: (formData) => api.upload("/dashboard/profile/avatar/", formData),
   artworks: () => api.get("/dashboard/artworks/"),
   artwork: (id) => api.get(`/dashboard/artworks/${id}/`),
   createArtwork: (body) => api.post("/dashboard/artworks/", body),

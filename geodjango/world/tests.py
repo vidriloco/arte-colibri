@@ -693,6 +693,43 @@ class SeoInjectionTests(APITestCase):
         self.assertIn("Ssr-Artist", html)
 
 
+class ArtworkFormFieldsTests(APITestCase):
+    def setUp(self):
+        self.artist = make_artist("form-artist")
+
+    def _tok(self):
+        return self.client.post(
+            "/api/auth/login/", {"email": "form-artist@x.mx", "password": "colibri123"}, format="json"
+        ).json()["token"]
+
+    def test_english_optional_not_cross_filled_and_sold_price(self):
+        r = self.client.post(
+            "/api/dashboard/artworks/",
+            {
+                "title": {"es": "Obra", "en": ""},
+                "description": {"es": "Una descripción", "en": ""},
+                "medium": {"es": "Óleo", "en": ""},
+                "dimensions": "60x80",
+                "year": 2025,
+                "price": "1000",
+                "availability": "sold",
+                "sold_price": "1500",
+                "tags": [],
+            },
+            format="json", HTTP_AUTHORIZATION=f"Token {self._tok()}",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        art = Artwork.objects.get(slug=r.json()["slug"])
+        self.assertEqual(art.title_es, "Obra")
+        self.assertEqual(art.title_en, "")           # English left blank (no cross-fill)
+        self.assertEqual(art.description_en, "")      # blank, not duplicated from Spanish
+        self.assertEqual(art.availability, "sold")
+        self.assertEqual(str(art.sold_price), "1500.00")
+        # Read-back exposes English as empty string (display falls back client-side).
+        self.assertEqual(r.json()["title"]["en"], "")
+        self.assertEqual(r.json()["sold_price"], "1500.00")
+
+
 def _curator(email="curk@x.mx"):
     user = User.objects.create_user(username=email, password="colibri123")
     g, _ = Group.objects.get_or_create(name=settings.CURATOR_GROUP)

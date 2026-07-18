@@ -55,6 +55,8 @@ class Artwork(ModeratedModel):
     year = models.PositiveIntegerField(null=True, blank=True)
 
     price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # Optional: the price the piece actually sold for (only meaningful when sold).
+    sold_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     currency = models.CharField(max_length=3, default="MXN")
     availability = models.CharField(
         max_length=12,

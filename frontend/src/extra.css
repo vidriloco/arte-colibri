@@ -273,3 +273,14 @@
 .apikey__status { color: var(--muted); font-size: 0.85rem; font-family: var(--mono, monospace); }
 .apikey__status.is-set { color: var(--accent, #117360); }
 .apikey__actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+
+/* Profile avatar upload */
+.avatar-upload { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.avatar-upload__img,
+.avatar-upload__ph {
+  width: 72px; height: 72px; border-radius: 50%;
+  object-fit: cover; border: 1px solid var(--hairline); background: var(--panel);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono, monospace); color: var(--muted); font-size: 1.1rem;
+}
+.avatar-upload__btn { position: relative; }

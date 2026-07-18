@@ -13,3 +13,6 @@ media/
 
 # Deploy secrets (maintained by scripts/prod.sh)
 .env
+
+# Accidental nested clone of the repo (has its own .git); never track it.
+/arte-colibri/

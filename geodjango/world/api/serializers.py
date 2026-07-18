@@ -189,9 +189,13 @@ class InquirySerializer(serializers.ModelSerializer):
 
 # ── Owner: artwork write ──────────────────────────────────────────────────────
 class ArtworkOwnerSerializer(serializers.ModelSerializer):
-    title = BilingualField("title_es", "title_en")
+    # English is optional: `fallback=False` keeps `*_en` exactly as sent (blank
+    # stays blank), and the display layer falls back to Spanish.
+    title = BilingualField("title_es", "title_en", fallback=False)
     medium = BilingualField("medium_es", "medium_en", required=False)
-    description = BilingualField("description_es", "description_en", required=False)
+    description = BilingualField(
+        "description_es", "description_en", required=False, fallback=False
+    )
     tags = serializers.SlugRelatedField(
         slug_field="slug", many=True, queryset=Tag.objects.all(), required=False
     )
@@ -202,7 +206,7 @@ class ArtworkOwnerSerializer(serializers.ModelSerializer):
         model = Artwork
         fields = [
             "id", "slug", "title", "medium", "description", "dimensions",
-            "year", "price", "currency", "availability", "tags",
+            "year", "price", "sold_price", "currency", "availability", "tags",
             "status", "featured", "images", "review_notes", "artist_slug",
         ]
         read_only_fields = ["slug", "status", "featured", "review_notes"]

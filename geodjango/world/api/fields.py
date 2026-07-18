@@ -11,9 +11,13 @@ class BilingualField(serializers.Field):
     ``validated_data`` (uses ``source='*'``).
     """
 
-    def __init__(self, es_field, en_field, **kwargs):
+    def __init__(self, es_field, en_field, fallback=True, **kwargs):
         self.es_field = es_field
         self.en_field = en_field
+        # When True (default), a single-language submission is mirrored into the
+        # other language. Set False to keep English exactly as given (empty when
+        # blank) — the display layer falls back to Spanish via `bi()`.
+        self.fallback = fallback
         kwargs["source"] = "*"
         super().__init__(**kwargs)
 
@@ -33,5 +37,9 @@ class BilingualField(serializers.Field):
             raise serializers.ValidationError("Expected an object with 'es'/'en' keys.")
         es = (data.get("es") or "").strip()
         en = (data.get("en") or "").strip()
-        # Fall back across languages so a single-language submission still works.
-        return {self.es_field: es or en, self.en_field: en or es}
+        if self.fallback:
+            # Mirror a single-language submission across both fields.
+            return {self.es_field: es or en, self.en_field: en or es}
+        # Keep Spanish safe (never empty if either given) but store English
+        # exactly as provided — blank stays blank, so `bi()` falls back at read.
+        return {self.es_field: es or en, self.en_field: en}
