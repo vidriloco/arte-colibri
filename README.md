@@ -88,7 +88,8 @@ One command deploys everything:
 ./scripts/prod.sh up
 ```
 
-That single shot: maintains a git-ignored `.env` (generates `DJANGO_SECRET_KEY`
+That single shot: pulls the latest `main` from origin (fast-forward only; skipped
+when there's no remote), maintains a git-ignored `.env` (generates `DJANGO_SECRET_KEY`
 on first run, forces `DJANGO_DEBUG=False`, derives `DJANGO_ALLOWED_HOSTS` and
 `CSRF_TRUSTED_ORIGINS` from `APP_DOMAIN`, scaffolds the Cloudflare Turnstile
 keys), builds the image (a Node stage compiles the SPA with `base=/static/` and

@@ -5,8 +5,9 @@
 # resources so they don't clash with other apps on this host.
 #
 # Usage: ./scripts/prod.sh [command] [args...]
-#   up        (default) one-shot deploy: prepare .env, build + start, apply
-#             migrations, install/refresh the Apache vhost, show status
+#   up        (default) one-shot deploy: pull latest main, prepare .env,
+#             build + start, apply migrations, install/refresh the Apache
+#             vhost, show status
 #   apache    (re)install the Apache vhost for APP_DOMAIN and reload Apache
 #   down      stop and remove containers (keeps the DB volume)
 #   logs      follow logs
@@ -88,6 +89,31 @@ ensure_env() {
   fi
 }
 
+pull_latest() {
+  # Deploy from the tip of main. Quietly steps aside when there's nothing to
+  # pull from (no git, no origin — e.g. a copied directory), warns when the
+  # checkout isn't main, and refuses to guess when histories diverged.
+  command -v git >/dev/null 2>&1 || return 0
+  git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  if ! git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+    echo "No 'origin' remote — skipping git pull."
+    return 0
+  fi
+  local branch
+  branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
+  if [ "$branch" != "main" ]; then
+    echo "WARNING: checked out on '$branch', not main — skipping git pull." >&2
+    return 0
+  fi
+  echo "Pulling latest main..."
+  git -C "$ROOT" fetch origin main
+  if ! git -C "$ROOT" merge --ff-only origin/main; then
+    echo "ERROR: local main has diverged from origin/main — resolve manually," >&2
+    echo "       then rerun ./scripts/prod.sh up" >&2
+    return 1
+  fi
+}
+
 migrate_db() {
   echo "Applying database migrations..."
   local i
@@ -145,6 +171,7 @@ cmd="${1:-up}"
 
 case "$cmd" in
   up)
+    pull_latest
     ensure_env
     dc up -d --build "$@"
     migrate_db
