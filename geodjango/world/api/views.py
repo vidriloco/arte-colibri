@@ -427,7 +427,8 @@ class DashboardArtworkViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=["delete"],
-        url_path=r"images/(?P<image_id>[^/.]+)",
+        # Digits only, so `images/reorder/` doesn't get captured here as an id.
+        url_path=r"images/(?P<image_id>\d+)",
     )
     def delete_image(self, request, pk=None, image_id=None):
         artwork = self.get_object()

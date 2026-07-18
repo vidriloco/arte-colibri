@@ -417,6 +417,19 @@ class ImageTests(_S3MockMixin, APITestCase):
         self.assertEqual(orig["ContentType"], "image/jpeg")
         self.assertLessEqual(len(orig["Body"]), 700 * 1024)
 
+    def test_reorder_sets_primary(self):
+        tok = self._tok()
+        a = self._upload(_png(), tok=tok).json()  # first upload → primary
+        b = self._upload(_png(), tok=tok).json()
+        r = self.client.post(
+            f"/api/dashboard/artworks/{self.w.id}/images/reorder/",
+            {"order": [b["id"], a["id"]], "primary": b["id"]},
+            format="json", HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        self.assertEqual(r.status_code, 200)  # routes to reorder, not the delete route
+        self.assertTrue(ArtworkImage.objects.get(pk=b["id"]).is_primary)
+        self.assertFalse(ArtworkImage.objects.get(pk=a["id"]).is_primary)
+
     def test_non_owner_cannot_upload(self):
         make_artist("intruder")
         r = self._upload(_png(), tok=self._tok("intruder@x.mx"))
