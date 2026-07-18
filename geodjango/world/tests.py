@@ -533,15 +533,16 @@ class S3UnconfiguredTests(APITestCase):
         ).json()["token"]
 
     def test_upload_without_credentials_errors_and_writes_nothing(self):
-        self.client.raise_request_exception = False
         r = self.client.post(
             f"/api/dashboard/artworks/{self.w.id}/images/",
             {"image": _png()},
             format="multipart",
             HTTP_AUTHORIZATION=f"Token {self._tok()}",
         )
-        self.assertEqual(r.status_code, 500)
-        # The just-created row is rolled back; no image persists.
+        # A clean, useful field error (not a raw 500), and no dangling row.
+        self.assertIn(r.status_code, (502, 503))
+        self.assertIn("image", r.json())
+        self.assertTrue(r.json()["image"])
         self.assertEqual(ArtworkImage.objects.count(), 0)
 
 

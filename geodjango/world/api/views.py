@@ -1,5 +1,7 @@
 """API views: public (published-only), auth/signup, dashboard, curation."""
 
+import logging
+
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -68,6 +70,22 @@ from .serializers import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
+
+
+def _upload_error_response(exc, field):
+    """Map an image-upload exception to a clean, useful JSON error response."""
+    if isinstance(exc, RuntimeError):
+        logger.warning("%s upload failed (storage not configured): %s", field, exc)
+        return Response(
+            {field: "Image storage isn't set up on the server yet. Contact the administrator."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    logger.exception("%s upload failed", field)
+    return Response(
+        {field: "We couldn't upload this image. Please try again, or use a different file."},
+        status=status.HTTP_502_BAD_GATEWAY,
+    )
 
 
 # ── Public ────────────────────────────────────────────────────────────────────
@@ -320,13 +338,16 @@ class DashboardAvatarView(APIView):
             validate_image(f, max_bytes=UPLOAD_MAX_BYTES, check_dimension=False)
         except ValueError as e:
             return Response({"avatar": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        jpeg = compress_to_jpeg(f, max_bytes=AVATAR_MAX_BYTES, name="avatar.jpg")
-        artist.avatar_url = s3.put_bytes_to_s3(
-            jpeg.read(),
-            s3.avatar_key(artist, content_type="image/jpeg"),
-            content_type="image/jpeg",
-        )
-        artist.save(update_fields=["avatar_url"])
+        try:
+            jpeg = compress_to_jpeg(f, max_bytes=AVATAR_MAX_BYTES, name="avatar.jpg")
+            artist.avatar_url = s3.put_bytes_to_s3(
+                jpeg.read(),
+                s3.avatar_key(artist, content_type="image/jpeg"),
+                content_type="image/jpeg",
+            )
+            artist.save(update_fields=["avatar_url"])
+        except Exception as e:  # noqa: BLE001
+            return _upload_error_response(e, "avatar")
         return Response(ArtistOwnerSerializer(artist, context={"request": request}).data)
 
 
@@ -393,9 +414,9 @@ class DashboardArtworkViewSet(viewsets.ModelViewSet):
                 thumb.read(), s3.artwork_thumb_key(img), content_type="image/jpeg"
             )
             img.save(update_fields=["external_url", "thumbnail_url"])
-        except Exception:  # noqa: BLE001 — don't leave an image row without objects
+        except Exception as e:  # noqa: BLE001 — don't leave an image row without objects
             img.delete()
-            raise
+            return _upload_error_response(e, "image")
         return Response(
             ArtworkImageSerializer(img, context={"request": request}).data,
             status=status.HTTP_201_CREATED,

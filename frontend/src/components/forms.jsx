@@ -109,7 +109,9 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
       const saved = await Dash.uploadAvatar(fd);
       setAvatarUrl(saved.avatar || "");
     } catch (err) {
-      setErrors((x) => ({ ...x, avatar: err?.data?.avatar || t("error_b") }));
+      const d = err?.data;
+      const msg = (d && typeof d === "object" && (d.avatar || d.detail)) || t("error_b");
+      setErrors((x) => ({ ...x, avatar: msg }));
     } finally {
       setAvatarBusy(false);
     }
@@ -310,7 +312,9 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
       const img = await Dash.addImage(saved.id, fd);
       setImages((prev) => [...prev, img]);
     } catch (err) {
-      setErrors(err.data && typeof err.data === "object" ? err.data : { image: t("error_b") });
+      const d = err?.data;
+      const msg = (d && typeof d === "object" && (d.image || d.detail)) || t("error_b");
+      setErrors((x) => ({ ...x, image: msg }));
     } finally {
       setSaving(false);
     }
