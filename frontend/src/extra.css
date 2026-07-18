@@ -106,6 +106,13 @@
 .dash-work__thumb { width: 64px; height: 64px; border-radius: var(--r-sm); overflow: hidden; }
 .dash-work__title { font-size: 16px; line-height: 1.2; }
 .dash-work__title em { font-style: italic; }
+/* Clickable thumbnail + title → open the detail modal */
+.dash-work__open { padding: 0; border: 0; background: none; cursor: pointer; display: block; }
+.dash-work__titlebtn {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.dash-work__titlebtn:hover { text-decoration: underline; }
 .dash-work__sub {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -273,6 +280,30 @@
 .apikey__status { color: var(--muted); font-size: 0.85rem; font-family: var(--mono, monospace); }
 .apikey__status.is-set { color: var(--accent, #117360); }
 .apikey__actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+
+/* Artwork detail modal (curation) */
+.modal__panel--wide { max-width: 720px; }
+.artdetail__gallery {
+  display: flex; gap: 10px; overflow-x: auto; margin: 4px 0 18px; padding-bottom: 4px;
+}
+.artdetail__img {
+  height: 160px; width: auto; border-radius: var(--r-sm);
+  border: 1px solid var(--hair); object-fit: cover; flex: 0 0 auto;
+}
+.artdetail { margin: 0; }
+.artdetail__row {
+  display: grid; grid-template-columns: 160px 1fr; gap: 12px;
+  padding: 8px 0; border-top: 1px solid var(--hair);
+}
+.artdetail__k { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.artdetail__v { margin: 0; white-space: pre-wrap; }
+.artdetail__actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hair);
+}
+@media (max-width: 640px) {
+  .artdetail__row { grid-template-columns: 1fr; gap: 2px; }
+}
 
 /* Profile avatar upload */
 .avatar-upload { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }

@@ -89,6 +89,12 @@ export function Artist() {
                 <a href="#" onClick={(e) => e.preventDefault()}>{artist.instagram}</a>
               </li>
             )}
+            {artist.tiktok && (
+              <li>
+                <span className="artist__link-k">{t("tiktok")}</span>
+                <a href="#" onClick={(e) => e.preventDefault()}>{artist.tiktok}</a>
+              </li>
+            )}
           </ul>
         </aside>
       </section>

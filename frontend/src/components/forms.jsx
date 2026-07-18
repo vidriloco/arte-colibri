@@ -82,6 +82,7 @@ const emptyProfile = (artist) => ({
   disciplineValue:
     DISCIPLINES.find((d) => d.es === bi(artist?.discipline, "es"))?.value || "",
   instagram: artist?.instagram || "",
+  tiktok: artist?.tiktok || "",
   web: artist?.web || "",
   statement: bi(artist?.bio, "es") || "",
 });
@@ -133,6 +134,7 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
         discipline: { es: disc.es, en: disc.en },
         bio: { es: form.statement, en: form.statement },
         instagram: form.instagram,
+        tiktok: form.tiktok,
         web: form.web,
       });
       onSaved && onSaved(saved);
@@ -175,9 +177,15 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
           <ApplyField label={t("apply_instagram")}>
             <input type="text" placeholder="@usuario" value={form.instagram} onChange={(e) => set("instagram", e.target.value)} />
           </ApplyField>
+          <ApplyField label={t("apply_tiktok")}>
+            <input type="text" placeholder="@usuario" value={form.tiktok} onChange={(e) => set("tiktok", e.target.value)} />
+          </ApplyField>
+        </div>
+        <div className="apply__row apply__row--2">
           <ApplyField label={t("apply_web")}>
             <input type="url" placeholder="https://" value={form.web} onChange={(e) => set("web", e.target.value)} />
           </ApplyField>
+          <span aria-hidden="true" />
         </div>
         <ApplyField label={t("apply_statement")} error={errors.statement} required hint={t("apply_statement_ph")}>
           <textarea rows={3} value={form.statement} onChange={(e) => set("statement", e.target.value)} />

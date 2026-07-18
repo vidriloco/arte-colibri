@@ -119,7 +119,7 @@ class ArtistMiniSerializer(serializers.ModelSerializer):
         model = Artist
         fields = [
             "slug", "display_name", "discipline", "city", "region",
-            "instagram", "web", "since", "avatar", "initials",
+            "instagram", "tiktok", "web", "since", "avatar", "initials",
         ]
 
     def get_avatar(self, obj):
@@ -263,7 +263,7 @@ class ArtistOwnerSerializer(serializers.ModelSerializer):
         model = Artist
         fields = [
             "slug", "display_name", "discipline", "bio", "city", "region",
-            "instagram", "web", "since", "avatar", "status", "review_notes",
+            "instagram", "tiktok", "web", "since", "avatar", "status", "review_notes",
         ]
         read_only_fields = ["slug", "status", "review_notes"]
 
@@ -283,8 +283,10 @@ class ReviewArtworkSerializer(ArtworkDetailSerializer):
     review_notes = serializers.CharField(read_only=True)
 
     class Meta(ArtworkDetailSerializer.Meta):
+        # Curator-only view, so it's safe to include owner-private fields.
         fields = ArtworkDetailSerializer.Meta.fields + [
             "id", "status", "reviewed_at", "review_notes",
+            "sold_price", "weight",
         ]
 
 

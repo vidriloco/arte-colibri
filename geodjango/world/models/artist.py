@@ -37,6 +37,7 @@ class Artist(ModeratedModel):
     point = gis_models.PointField(null=True, blank=True, srid=4326)
 
     instagram = models.CharField(max_length=120, blank=True, default="")
+    tiktok = models.CharField(max_length=120, blank=True, default="")
     web = models.CharField(max_length=200, blank=True, default="")
 
     # Legacy local-filesystem avatar; retained (nullable) for pre-S3 rows.

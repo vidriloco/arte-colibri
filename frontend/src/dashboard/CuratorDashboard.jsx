@@ -8,23 +8,39 @@ import { ModStatusBadge, DashTabs, RejectControl } from "./shared.jsx";
 import { SeoTab } from "./SeoTab.jsx";
 import { AccountsTab } from "./AccountsTab.jsx";
 import { ApiKeysTab } from "./ApiKeysTab.jsx";
+import { ArtworkReviewModal } from "./ArtworkReviewModal.jsx";
 
 function ReviewRow({ work, onApprove, onReject }) {
   const { lang, t } = useLang();
+  const [open, setOpen] = React.useState(false);
   return (
     <li className="dash-work">
-      <div className="dash-work__thumb">
+      <button type="button" className="dash-work__thumb dash-work__open" onClick={() => setOpen(true)}
+              aria-label={t("md_view_details")}>
         <ArtImage src={work.images?.[0]?.thumb} alt={bi(work.title, lang)} ratio="1 / 1" variant="thumb" />
-      </div>
+      </button>
       <div className="dash-work__meta">
-        <h3 className="dash-work__title"><em>{bi(work.title, lang)}</em>, {work.year}</h3>
+        <h3 className="dash-work__title">
+          <button type="button" className="dash-work__titlebtn" onClick={() => setOpen(true)}>
+            <em>{bi(work.title, lang)}</em>, {work.year}
+          </button>
+        </h3>
         <p className="dash-work__sub">{work.artist_name} · {formatPrice(work.price, lang, work.currency)}</p>
       </div>
       <ModStatusBadge status={work.status} />
       <div className="dash-work__actions">
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setOpen(true)}>{t("md_view_details")}</button>
         <button type="button" className="btn btn--primary btn--sm" onClick={() => onApprove(work)}>{t("md_approve")}</button>
         <RejectControl onReject={(notes) => onReject(work, notes)} />
       </div>
+      {open && (
+        <ArtworkReviewModal
+          work={work}
+          onClose={() => setOpen(false)}
+          onApprove={() => { setOpen(false); onApprove(work); }}
+          onReject={(notes) => { setOpen(false); onReject(work, notes); }}
+        />
+      )}
     </li>
   );
 }
