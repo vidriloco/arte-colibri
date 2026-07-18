@@ -8,9 +8,24 @@ from PIL import Image, UnidentifiedImageError
 THUMB_SIZE = (600, 750)
 MAX_DIMENSION = 4000
 
+# Per-type upload byte ceilings, enforced before anything is stored on S3.
+AVATAR_MAX_BYTES = 200 * 1024  # 200 KB — artist profile avatar
+ARTWORK_IMAGE_MAX_BYTES = 500 * 1024  # 500 KB — artwork image
 
-def validate_image(django_file):
-    """Raise ValueError if the upload is not a usable image."""
+
+def validate_image(django_file, max_bytes=None):
+    """Raise ValueError if the upload is not a usable image.
+
+    When ``max_bytes`` is given, the uploaded file size is checked first so an
+    oversized upload is rejected before it is decoded or stored.
+    """
+    if max_bytes is not None:
+        size = getattr(django_file, "size", None)
+        if size is not None and size > max_bytes:
+            raise ValueError(
+                f"Image exceeds {max_bytes // 1024} KB "
+                f"(got {size / 1024:.0f} KB)."
+            )
     try:
         img = Image.open(django_file)
         img.verify()

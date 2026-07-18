@@ -2,6 +2,8 @@
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
@@ -11,8 +13,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from world.imaging import make_thumbnail, validate_image
+from world.imaging import (
+    ARTWORK_IMAGE_MAX_BYTES,
+    AVATAR_MAX_BYTES,
+    make_thumbnail,
+    validate_image,
+)
+from world.utils import s3
 from world.models import (
+    ApiKey,
+    ApiType,
     Artist,
     Artwork,
     ArtworkImage,
@@ -22,12 +32,20 @@ from world.models import (
     Region,
     Tag,
 )
+from world.utils.openrouter import (
+    ALLOWED_MODEL_IDS,
+    DEFAULT_MODEL,
+    SEO_MODELS,
+    OpenRouterError,
+    generate_seo,
+)
 from world.models.seo import EDITABLE_KEYS
 from world.seo import resolve_public
 from world.turnstile import check_request as check_turnstile
 
 from .permissions import IsArtistOwner, IsCurator, is_curator
 from .serializers import (
+    AdminArtistSerializer,
     ArtistDetailSerializer,
     ArtistListSerializer,
     ArtistMiniSerializer,
@@ -282,6 +300,28 @@ class DashboardProfileView(APIView):
         return Response(ArtistOwnerSerializer(artist, context={"request": request}).data)
 
 
+class DashboardAvatarView(APIView):
+    """Upload/replace the signed-in artist's profile avatar (≤ 200 KB) on S3."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        artist = get_object_or_404(Artist, user=request.user)
+        f = request.FILES.get("avatar") or request.FILES.get("image")
+        if not f:
+            return Response(
+                {"avatar": "No file provided."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        # Reject non-images and anything over 200 KB before touching S3.
+        try:
+            validate_image(f, max_bytes=AVATAR_MAX_BYTES)
+        except ValueError as e:
+            return Response({"avatar": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        artist.avatar_url = s3.upload_fileobj(f, s3.avatar_key(artist, f))
+        artist.save(update_fields=["avatar_url"])
+        return Response(ArtistOwnerSerializer(artist, context={"request": request}).data)
+
+
 class DashboardArtworkViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsArtistOwner]
     serializer_class = ArtworkOwnerSerializer
@@ -320,15 +360,28 @@ class DashboardArtworkViewSet(viewsets.ModelViewSet):
             return Response(
                 {"image": "No file provided."}, status=status.HTTP_400_BAD_REQUEST
             )
+        # Reject non-images and anything over 500 KB before touching S3.
         try:
-            validate_image(f)
+            validate_image(f, max_bytes=ARTWORK_IMAGE_MAX_BYTES)
         except ValueError as e:
             return Response({"image": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
         count = artwork.images.count()
-        img = ArtworkImage(artwork=artwork, position=count, is_primary=(count == 0))
-        img.image = f
-        img.thumbnail = make_thumbnail(f, name=f"thumb-{f.name}")
-        img.save()
+        img = ArtworkImage.objects.create(
+            artwork=artwork, position=count, is_primary=(count == 0)
+        )
+        # Keys are namespaced by the artwork slug + the new image id, so create
+        # the row first, then upload the original + generated thumbnail.
+        try:
+            img.external_url = s3.upload_fileobj(f, s3.artwork_image_key(img, f))
+            thumb = make_thumbnail(f, name=f"{img.id}.jpg")
+            img.thumbnail_url = s3.put_bytes_to_s3(
+                thumb.read(), s3.artwork_thumb_key(img), content_type="image/jpeg"
+            )
+            img.save(update_fields=["external_url", "thumbnail_url"])
+        except Exception:  # noqa: BLE001 — don't leave an image row without objects
+            img.delete()
+            raise
         return Response(
             ArtworkImageSerializer(img, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -343,6 +396,9 @@ class DashboardArtworkViewSet(viewsets.ModelViewSet):
         artwork = self.get_object()
         img = get_object_or_404(ArtworkImage, pk=image_id, artwork=artwork)
         was_primary = img.is_primary
+        # Best-effort removal of the S3 objects (tolerates an already-missing one).
+        s3.delete_from_s3_by_url(img.external_url)
+        s3.delete_from_s3_by_url(img.thumbnail_url)
         img.delete()
         if was_primary:
             nxt = artwork.images.order_by("position", "id").first()
@@ -472,6 +528,54 @@ class CurationInquiriesView(APIView):
         )
 
 
+class CurationArtistsView(APIView):
+    """All artist accounts (any moderation status) with their submitted work —
+    the curator's people/accounts admin list. Optional ?status= filter."""
+
+    permission_classes = [IsAuthenticated, IsCurator]
+
+    def get(self, request):
+        qs = (
+            Artist.objects.select_related("user", "region")
+            .prefetch_related("artworks__images")
+            .order_by("-created_at")
+        )
+        s = request.query_params.get("status")
+        if s:
+            qs = qs.filter(status=s)
+        return Response(
+            AdminArtistSerializer(qs, many=True, context={"request": request}).data
+        )
+
+
+class CurationArtistPasswordView(APIView):
+    """Curator sets a new password for an artist's linked auth account. Existing
+    tokens are revoked so any old session must re-authenticate."""
+
+    permission_classes = [IsAuthenticated, IsCurator]
+
+    def post(self, request, pk):
+        artist = get_object_or_404(Artist, pk=pk)
+        user = artist.user
+        if user is None:
+            return Response(
+                {"detail": "This artist has no linked account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        password = (request.data.get("password") or "").strip()
+        try:
+            validate_password(password, user=user)
+        except DjangoValidationError as e:
+            return Response(
+                {"password": list(e.messages)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.set_password(password)
+        user.save(update_fields=["password"])
+        Token.objects.filter(user=user).delete()
+        return Response({"detail": "Password updated."})
+
+
 class CurationSeoViewSet(viewsets.ModelViewSet):
     """Curator-managed SEO slots. Keyed by `key`; every editable slot is
     materialized on access so the list always shows the full set."""
@@ -518,3 +622,104 @@ class CurationSeoViewSet(viewsets.ModelViewSet):
         obj.updated_by = request.user
         obj.save(update_fields=["og_image", "updated_by", "updated_at"])
         return Response(self.get_serializer(obj).data)
+
+    @action(detail=True, methods=["post"], url_path="generate")
+    def generate(self, request, key=None):
+        """Draft a full bilingual SEO set for this slot from its description via
+        OpenRouter. Returns the fields for review — does NOT save them."""
+        obj = self.get_object()
+        api_key = ApiKey.objects.filter(api_type=ApiType.OPENROUTER).first()
+        if not api_key or not api_key.key_value:
+            return Response(
+                {"detail": "No OpenRouter key configured."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        # Source text: Spanish description if present, else English.
+        if obj.description_es.strip():
+            source_lang, description = "es", obj.description_es
+        elif obj.description_en.strip():
+            source_lang, description = "en", obj.description_en
+        else:
+            return Response(
+                {"detail": "Add a description first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        model = api_key.model or settings.OPENROUTER_MODEL or DEFAULT_MODEL
+        try:
+            fields = generate_seo(
+                description, source_lang, api_key=api_key.key_value, model=model
+            )
+        except OpenRouterError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(fields)
+
+
+class CurationApiKeysView(APIView):
+    """Curator-managed API keys. GET lists every supported type (with a masked
+    preview + is_set flag) plus the model catalog; PUT/POST upserts a key by type."""
+
+    permission_classes = [IsAuthenticated, IsCurator]
+
+    def get(self, request):
+        existing = {k.api_type: k for k in ApiKey.objects.all()}
+        rows = []
+        for value, label in ApiType.choices:
+            obj = existing.get(value)
+            rows.append(
+                {
+                    "api_type": value,
+                    "label": label,
+                    "is_set": bool(obj and obj.key_value),
+                    "key_preview": obj.preview if obj else "",
+                    "model": (obj.model if obj else "") or "",
+                    "updated_at": obj.updated_at if obj else None,
+                }
+            )
+        return Response({"keys": rows, "models": SEO_MODELS})
+
+    def put(self, request):
+        return self._upsert(request)
+
+    def post(self, request):
+        return self._upsert(request)
+
+    def _upsert(self, request):
+        api_type = (request.data.get("api_type") or "").strip()
+        if api_type not in ApiType.values:
+            return Response(
+                {"api_type": "Unknown API type."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        model = (request.data.get("model") or "").strip()
+        if model and model not in ALLOWED_MODEL_IDS:
+            return Response(
+                {"model": "Unsupported model."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        key_value = (request.data.get("key_value") or "").strip()
+        existing = ApiKey.objects.filter(api_type=api_type).first()
+        # The key is required on first save; on a later edit (e.g. switching the
+        # model) it may be omitted to keep the stored secret.
+        if not key_value and not existing:
+            return Response(
+                {"key_value": "This field is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        defaults = {"model": model, "updated_by": request.user}
+        if key_value:
+            defaults["key_value"] = key_value
+        obj, _ = ApiKey.objects.update_or_create(api_type=api_type, defaults=defaults)
+        return Response(
+            {
+                "api_type": obj.api_type,
+                "is_set": bool(obj.key_value),
+                "key_preview": obj.preview,
+                "model": obj.model,
+            }
+        )
+
+
+class CurationApiKeyDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsCurator]
+
+    def delete(self, request, api_type):
+        ApiKey.objects.filter(api_type=api_type).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

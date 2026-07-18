@@ -27,6 +27,11 @@ urlpatterns = [
     # Dashboard
     path("dashboard/profile/", views.DashboardProfileView.as_view(), name="dash-profile"),
     path(
+        "dashboard/profile/avatar/",
+        views.DashboardAvatarView.as_view(),
+        name="dash-avatar",
+    ),
+    path(
         "dashboard/inquiries/",
         views.DashboardInquiriesView.as_view(),
         name="dash-inquiries",
@@ -44,6 +49,18 @@ urlpatterns = [
         name="curation-artwork-action",
     ),
     path(
+        "curation/artists/",
+        views.CurationArtistsView.as_view(),
+        name="curation-artists",
+    ),
+    # Must precede the generic <action_name> route below, or "password" would
+    # be captured as an action name.
+    path(
+        "curation/artists/<int:pk>/password/",
+        views.CurationArtistPasswordView.as_view(),
+        name="curation-artist-password",
+    ),
+    path(
         "curation/artists/<int:pk>/<str:action_name>/",
         views.CurationArtistActionView.as_view(),
         name="curation-artist-action",
@@ -52,6 +69,16 @@ urlpatterns = [
         "curation/inquiries/",
         views.CurationInquiriesView.as_view(),
         name="curation-inquiries",
+    ),
+    path(
+        "curation/api-keys/",
+        views.CurationApiKeysView.as_view(),
+        name="curation-api-keys",
+    ),
+    path(
+        "curation/api-keys/<str:api_type>/",
+        views.CurationApiKeyDetailView.as_view(),
+        name="curation-api-key",
     ),
     path("", include(router.urls)),
 ]

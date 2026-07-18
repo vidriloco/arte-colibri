@@ -65,6 +65,13 @@ class PageSeo(models.Model):
     og_description_es = models.TextField(blank=True, default="")
     og_description_en = models.TextField(blank=True, default="")
     og_image = models.ImageField(upload_to="seo/", blank=True, null=True)
+    # Alt text describing the share image (og:image:alt / twitter:image:alt).
+    image_alt_es = models.CharField(max_length=250, blank=True, default="")
+    image_alt_en = models.CharField(max_length=250, blank=True, default="")
+
+    # Comma-separated meta keywords (name="keywords").
+    keywords_es = models.CharField(max_length=300, blank=True, default="")
+    keywords_en = models.CharField(max_length=300, blank=True, default="")
 
     canonical = models.URLField(blank=True, default="")
     robots = models.CharField(
@@ -127,12 +134,17 @@ class PageSeo(models.Model):
             "es": pick("og_description_es") or description["es"],
             "en": pick("og_description_en") or description["en"],
         }
+        # Alt/keywords stand on their own — no fallback to title/description.
+        image_alt = {"es": pick("image_alt_es"), "en": pick("image_alt_en")}
+        keywords = {"es": pick("keywords_es"), "en": pick("keywords_en")}
         return {
             "title": title,
             "description": description,
             "og_title": og_title,
             "og_description": og_description,
             "og_image": og_image,
+            "image_alt": image_alt,
+            "keywords": keywords,
             "canonical": pick("canonical"),
             "robots": pick("robots") or RobotsDirective.INDEX.value,
         }

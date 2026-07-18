@@ -13,13 +13,17 @@ function biField(pair) {
 }
 
 // Editor for a single SEO slot. `slot` is a PageSeo payload from the API.
-function SlotEditor({ slot, onSaved }) {
+function SlotEditor({ slot, onSaved, aiEnabled }) {
   const { t } = useLang();
+  const [generating, setGenerating] = React.useState(false);
+  const [genError, setGenError] = React.useState(null);
   const [form, setForm] = React.useState(() => ({
     title: biField(slot.title),
     description: biField(slot.description),
+    keywords: biField(slot.keywords),
     og_title: biField(slot.og_title),
     og_description: biField(slot.og_description),
+    image_alt: biField(slot.image_alt),
     canonical: slot.canonical || "",
     robots: slot.robots || "index,follow",
   }));
@@ -34,8 +38,10 @@ function SlotEditor({ slot, onSaved }) {
     setForm({
       title: biField(slot.title),
       description: biField(slot.description),
+      keywords: biField(slot.keywords),
       og_title: biField(slot.og_title),
       og_description: biField(slot.og_description),
+      image_alt: biField(slot.image_alt),
       canonical: slot.canonical || "",
       robots: slot.robots || "index,follow",
     });
@@ -64,6 +70,30 @@ function SlotEditor({ slot, onSaved }) {
     }
   };
 
+  // Draft every field from the slot's description via OpenRouter. Fills the form
+  // for review — the curator still clicks Save to persist.
+  const generate = async () => {
+    setGenerating(true);
+    setGenError(null);
+    setSaved(false);
+    try {
+      const f = await Curation.generateSeo(slot.key);
+      setForm((cur) => ({
+        ...cur,
+        title: biField(f.title),
+        description: biField(f.description),
+        keywords: biField(f.keywords),
+        og_title: biField(f.og_title),
+        og_description: biField(f.og_description),
+        image_alt: biField(f.image_alt),
+      }));
+    } catch (err) {
+      setGenError(err?.data?.detail || t("seo_gen_err"));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const onFile = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -84,6 +114,16 @@ function SlotEditor({ slot, onSaved }) {
 
   return (
     <form className="apply__form seo-form" noValidate onSubmit={submit}>
+      {aiEnabled && (
+        <div className="seo-generate">
+          <button type="button" className="btn btn--ghost btn--sm" disabled={generating} onClick={generate}>
+            {generating ? t("seo_generating") : t("seo_generate")}
+          </button>
+          <span className="seo-generate__hint">
+            {genError ? <span className="form__err">{genError}</span> : t("seo_generate_hint")}
+          </span>
+        </div>
+      )}
       <fieldset className="apply__section">
         <legend className="apply__section-title">{t("seo_meta")}</legend>
         <div className="apply__row apply__row--2">
@@ -100,6 +140,14 @@ function SlotEditor({ slot, onSaved }) {
           </ApplyField>
           <ApplyField label={t("seo_desc_en")}>
             <textarea rows={2} value={form.description.en} onChange={(e) => setBi("description", "en", e.target.value)} />
+          </ApplyField>
+        </div>
+        <div className="apply__row apply__row--2">
+          <ApplyField label={t("seo_keywords_es")} hint={t("seo_keywords_hint")}>
+            <input type="text" value={form.keywords.es} onChange={(e) => setBi("keywords", "es", e.target.value)} />
+          </ApplyField>
+          <ApplyField label={t("seo_keywords_en")}>
+            <input type="text" value={form.keywords.en} onChange={(e) => setBi("keywords", "en", e.target.value)} />
           </ApplyField>
         </div>
       </fieldset>
@@ -128,6 +176,14 @@ function SlotEditor({ slot, onSaved }) {
             <input type="file" accept="image/*" onChange={onFile} disabled={uploading} />
           </div>
         </ApplyField>
+        <div className="apply__row apply__row--2">
+          <ApplyField label={t("seo_img_alt_es")} hint={t("seo_img_alt_hint")}>
+            <input type="text" value={form.image_alt.es} onChange={(e) => setBi("image_alt", "es", e.target.value)} />
+          </ApplyField>
+          <ApplyField label={t("seo_img_alt_en")}>
+            <input type="text" value={form.image_alt.en} onChange={(e) => setBi("image_alt", "en", e.target.value)} />
+          </ApplyField>
+        </div>
       </fieldset>
 
       <fieldset className="apply__section">
@@ -159,7 +215,12 @@ function SlotEditor({ slot, onSaved }) {
 export function SeoTab() {
   const { t } = useLang();
   const { loading, error, data, reload } = useFetch(() => Curation.seo(), []);
+  const { data: keyData } = useFetch(() => Curation.apiKeys(), []);
   const [activeKey, setActiveKey] = React.useState(null);
+
+  const aiEnabled = !!(keyData?.keys || []).find(
+    (k) => k.api_type === "openrouter" && k.is_set
+  );
 
   if (loading) return <div className="dash-panel"><Loading /></div>;
   if (error) return <div className="dash-panel"><ErrorState onRetry={reload} /></div>;
@@ -181,7 +242,7 @@ export function SeoTab() {
         onChange={setActiveKey}
         tabs={slots.map((s) => ({ key: s.key, label: s.key_label }))}
       />
-      <SlotEditor key={current.key} slot={current} onSaved={() => reload()} />
+      <SlotEditor key={current.key} slot={current} onSaved={() => reload()} aiEnabled={aiEnabled} />
     </div>
   );
 }

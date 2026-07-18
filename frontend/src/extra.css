@@ -185,6 +185,65 @@
   .dash-work__actions { grid-column: 1 / -1; justify-content: flex-start; }
 }
 
+/* ── Accounts admin tab ──────────────────────────────────────────────────── */
+.acct-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
+.acct-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.acct {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  padding: 16px;
+}
+.acct__head {
+  display: grid;
+  grid-template-columns: 48px 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+}
+.acct__avatar {
+  width: 48px; height: 48px; border-radius: 50%; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--canvas-2); color: var(--muted);
+  font-family: var(--font-mono); font-size: 15px; font-weight: 600;
+}
+.acct__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.acct__name { font-size: 16px; line-height: 1.2; }
+.acct__email { font-size: 13px; margin-top: 2px; }
+.acct__email a { color: var(--accent); text-decoration: none; }
+.acct__noacct { color: var(--muted); font-style: italic; }
+.acct__meta { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+.acct__actions { display: flex; align-items: center; justify-content: flex-end; }
+.acct__pwok { font-size: 13px; color: var(--accent); }
+.acct-pw { min-width: 200px; }
+.acct-pw input {
+  width: 100%; padding: 8px 10px; margin-bottom: 8px;
+  border: 1px solid var(--hairline); border-radius: 6px;
+  font-size: 14px; background: var(--canvas-2); color: var(--ink);
+}
+.acct-pw__hint { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+.acct-pw__err { font-size: 12px; color: var(--throat); margin: 0 0 8px; }
+.acct__works-wrap { margin-top: 14px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+.acct__toggle {
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: var(--accent); font-size: 13px; font-weight: 500;
+}
+.acct__works {
+  list-style: none; padding: 0; margin: 12px 0 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px;
+}
+.acct__work { display: flex; flex-direction: column; gap: 6px; }
+.acct__work .art-img { width: 100%; border-radius: var(--r-sm); overflow: hidden; }
+.acct__work-title { font-size: 12.5px; line-height: 1.3; }
+.acct__work-title em { font-style: italic; }
+.acct__work .mod-badge { align-self: flex-start; }
+
+@media (max-width: 640px) {
+  .acct__head { grid-template-columns: 40px 1fr; }
+  .acct__avatar { width: 40px; height: 40px; }
+  .acct__head .mod-badge { grid-column: 2; justify-self: start; }
+  .acct__actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
 /* ── SEO management tab ──────────────────────────────────────────────────── */
 .seo-intro { color: var(--muted); max-width: 60ch; margin: 4px 0 20px; }
 .seo-form { max-width: 760px; }
@@ -194,3 +253,23 @@
   border: 1px solid var(--hairline); border-radius: 6px; background: var(--panel);
 }
 .seo-saved { color: var(--accent, #117360); font-weight: 500; font-size: 0.9rem; }
+
+/* AI-generate control at the top of a SEO slot editor */
+.seo-generate {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; margin-bottom: 20px;
+  border: 1px solid var(--hairline); border-radius: 8px; background: var(--panel);
+}
+.seo-generate__hint { color: var(--muted); font-size: 0.9rem; }
+
+/* API keys tab */
+.apikey-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; max-width: 760px; }
+.apikey {
+  border: 1px solid var(--hairline); border-radius: 8px;
+  padding: 16px 18px; background: var(--panel);
+}
+.apikey__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.apikey__name { margin: 0; font-size: 1.05rem; }
+.apikey__status { color: var(--muted); font-size: 0.85rem; font-family: var(--mono, monospace); }
+.apikey__status.is-set { color: var(--accent, #117360); }
+.apikey__actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 8px; }

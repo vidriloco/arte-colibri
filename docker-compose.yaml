@@ -18,9 +18,14 @@ services:
       DB_NAME: tenochtitlan
       DB_USER: tlaloc
       DB_PASSWORD: passw0rd
-      # User-uploaded media (artwork images, avatars) live on a named volume so
-      # they survive container replacement.
+      # Legacy user-uploaded media (pre-S3) lives on a named volume so those
+      # files survive container replacement. New uploads go to AWS S3.
       MEDIA_ROOT: /usr/src/app/media
+      # AWS S3 for artist-uploaded images — values come from the host .env.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_REGION: ${AWS_S3_REGION:-us-east-2}
+      AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-arte-colibri}
     depends_on:
       db:
         condition: service_healthy

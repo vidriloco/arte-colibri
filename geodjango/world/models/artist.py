@@ -39,7 +39,10 @@ class Artist(ModeratedModel):
     instagram = models.CharField(max_length=120, blank=True, default="")
     web = models.CharField(max_length=200, blank=True, default="")
 
+    # Legacy local-filesystem avatar; retained (nullable) for pre-S3 rows.
     avatar = models.ImageField(upload_to="artists/avatars/", null=True, blank=True)
+    # Public S3 URL of the uploaded avatar. New uploads populate this.
+    avatar_url = models.URLField(max_length=500, blank=True, default="")
     since = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:

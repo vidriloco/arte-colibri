@@ -89,10 +89,14 @@ class ArtworkImage(models.Model):
         on_delete=models.CASCADE,
         related_name="images",
     )
+    # Legacy local-filesystem fields; retained (nullable) for pre-S3 rows.
     image = models.ImageField(upload_to="artworks/", null=True, blank=True)
     thumbnail = models.ImageField(upload_to="artworks/thumbs/", null=True, blank=True)
-    # Seed/demo images reference a remote URL instead of an uploaded file.
+    # Public URL of the full-size image: an uploaded S3 object, or a seed/demo
+    # remote URL. Preferred by the serializer over the local `image` field.
     external_url = models.URLField(max_length=500, blank=True, default="")
+    # Public S3 URL of the generated thumbnail (new uploads populate this).
+    thumbnail_url = models.URLField(max_length=500, blank=True, default="")
     position = models.PositiveIntegerField(default=0)
     is_primary = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -49,7 +49,11 @@ export function applyHead(seo) {
   const ogDesc = seo.og_description || seo.description || "";
   const url = window.location.href;
 
+  const image = seo.image || "";
+  const imageAlt = image ? seo.image_alt || "" : "";
+
   upsertMeta("name", "description", seo.description || "");
+  upsertMeta("name", "keywords", seo.keywords || "");
   upsertMeta("name", "robots", seo.robots || "index,follow");
   upsertMeta("property", "og:type", "website");
   upsertMeta("property", "og:site_name", SITE_NAME);
@@ -59,8 +63,10 @@ export function applyHead(seo) {
   upsertMeta("name", "twitter:card", "summary_large_image");
   upsertMeta("name", "twitter:title", ogTitle);
   upsertMeta("name", "twitter:description", ogDesc);
-  upsertMeta("property", "og:image", seo.image || "");
-  upsertMeta("name", "twitter:image", seo.image || "");
+  upsertMeta("property", "og:image", image);
+  upsertMeta("name", "twitter:image", image);
+  upsertMeta("property", "og:image:alt", imageAlt);
+  upsertMeta("name", "twitter:image:alt", imageAlt);
   upsertLink("canonical", seo.canonical || url.split("?")[0]);
 }
 
@@ -87,6 +93,8 @@ export function useSeoPage(pageKey) {
       og_title: bi(payload.og_title, lang),
       og_description: bi(payload.og_description, lang),
       image: payload.og_image || "",
+      image_alt: bi(payload.image_alt, lang),
+      keywords: bi(payload.keywords, lang),
       canonical: payload.canonical || "",
       robots: payload.robots || "index,follow",
     });

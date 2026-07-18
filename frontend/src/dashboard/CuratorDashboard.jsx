@@ -6,6 +6,8 @@ import { useFetch } from "../hooks.js";
 import { ArtImage, Loading, ErrorState, EmptyState } from "../components/primitives.jsx";
 import { ModStatusBadge, DashTabs, RejectControl } from "./shared.jsx";
 import { SeoTab } from "./SeoTab.jsx";
+import { AccountsTab } from "./AccountsTab.jsx";
+import { ApiKeysTab } from "./ApiKeysTab.jsx";
 
 function ReviewRow({ work, onApprove, onReject }) {
   const { lang, t } = useLang();
@@ -154,14 +156,18 @@ export function CuratorDashboard() {
         tabs={[
           { key: "queue", label: t("md_review_queue") },
           { key: "works", label: t("md_all_works") },
+          { key: "accounts", label: t("md_accounts") },
           { key: "inquiries", label: t("md_inquiries") },
           { key: "seo", label: t("md_seo") },
+          { key: "apikeys", label: t("md_api_keys") },
         ]}
       />
       {tab === "queue" && <QueueTab />}
       {tab === "works" && <AllWorksTab />}
+      {tab === "accounts" && <AccountsTab />}
       {tab === "inquiries" && <InquiriesTab />}
       {tab === "seo" && <SeoTab />}
+      {tab === "apikeys" && <ApiKeysTab />}
     </main>
   );
 }

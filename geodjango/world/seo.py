@@ -58,6 +58,8 @@ def resolve_public(key, request):
         "og_title": r["og_title"],
         "og_description": r["og_description"],
         "og_image": _abs_media(request, r["og_image"]),
+        "image_alt": r["image_alt"],
+        "keywords": r["keywords"],
         "canonical": r["canonical"],
         "robots": r["robots"],
     }
@@ -82,7 +84,9 @@ def seo_for_request(request, lang=DEFAULT_LANG):
     return _flatten(PageSeo.resolve(key), request, lang)
 
 
-def _flatten(resolved, request, lang, title=None, description=None, image=None):
+def _flatten(
+    resolved, request, lang, title=None, description=None, image=None, image_alt=None
+):
     """Collapse a `PageSeo.resolve()` dict (+ optional overrides) into flat strings."""
     title = title if title is not None else _lang_pick(resolved["title"], lang)
     description = (
@@ -93,6 +97,9 @@ def _flatten(resolved, request, lang, title=None, description=None, image=None):
     og_title = _lang_pick(resolved["og_title"], lang) or title
     og_description = _lang_pick(resolved["og_description"], lang) or description
     image = image if image is not None else _abs_media(request, resolved["og_image"])
+    image_alt = (
+        image_alt if image_alt is not None else _lang_pick(resolved["image_alt"], lang)
+    )
     canonical = resolved["canonical"] or (
         request.build_absolute_uri(request.path) if request is not None else ""
     )
@@ -103,6 +110,8 @@ def _flatten(resolved, request, lang, title=None, description=None, image=None):
         "og_title": og_title or title,
         "og_description": og_description or description,
         "image": image,
+        "image_alt": image_alt,
+        "keywords": _lang_pick(resolved["keywords"], lang),
         "canonical": canonical,
         "robots": resolved["robots"] or RobotsDirective.INDEX.value,
         "url": request.build_absolute_uri(request.path) if request is not None else "",
@@ -134,6 +143,7 @@ def _artwork_seo(request, slug, lang):
         title=label,
         description=desc or "",
         image=_artwork_image(request, artwork),
+        image_alt=f"{title} · {artwork.artist.display_name}",
     )
 
 
@@ -151,6 +161,7 @@ def _artist_seo(request, slug, lang):
         title=label,
         description=desc or "",
         image=image or None,
+        image_alt=artist.display_name,
     )
 
 
@@ -165,12 +176,16 @@ def render_head(seo):
     robots = escape(seo.get("robots") or RobotsDirective.INDEX.value)
     url = escape(seo.get("url") or "")
     image = escape(seo.get("image") or "")
+    image_alt = escape(seo.get("image_alt") or "")
+    keywords = escape(seo.get("keywords") or "")
 
     tags = [
         "<title>%s</title>" % title,
         '<meta name="description" content="%s" />' % description,
         '<meta name="robots" content="%s" />' % robots,
     ]
+    if keywords:
+        tags.append('<meta name="keywords" content="%s" />' % keywords)
     if canonical:
         tags.append('<link rel="canonical" href="%s" />' % canonical)
     tags += [
@@ -187,6 +202,9 @@ def render_head(seo):
     if image:
         tags.append('<meta property="og:image" content="%s" />' % image)
         tags.append('<meta name="twitter:image" content="%s" />' % image)
+        if image_alt:
+            tags.append('<meta property="og:image:alt" content="%s" />' % image_alt)
+            tags.append('<meta name="twitter:image:alt" content="%s" />' % image_alt)
     return "\n    ".join(tags)
 
 

@@ -109,8 +109,18 @@ export const Curation = {
   featureArtwork: (id) => api.post(`/curation/artworks/${id}/feature/`, {}),
   approveArtist: (id) => api.post(`/curation/artists/${id}/approve/`, {}),
   rejectArtist: (id, notes) => api.post(`/curation/artists/${id}/reject/`, { notes }),
+  // Accounts admin: list all artist accounts + their work, reset a password.
+  artistsAdmin: (status) =>
+    api.get(`/curation/artists/${status ? `?status=${status}` : ""}`),
+  resetArtistPassword: (id, password) =>
+    api.post(`/curation/artists/${id}/password/`, { password }),
   inquiries: () => api.get("/curation/inquiries/"),
   seo: () => api.get("/curation/seo/"),
   saveSeo: (key, body) => api.patch(`/curation/seo/${key}/`, body),
   uploadSeoImage: (key, formData) => api.upload(`/curation/seo/${key}/image/`, formData),
+  generateSeo: (key) => api.post(`/curation/seo/${key}/generate/`, {}),
+  // API keys admin: list (masked) + model catalog, upsert by type, delete.
+  apiKeys: () => api.get("/curation/api-keys/"),
+  saveApiKey: (body) => api.put("/curation/api-keys/", body),
+  deleteApiKey: (apiType) => api.del(`/curation/api-keys/${apiType}/`),
 };

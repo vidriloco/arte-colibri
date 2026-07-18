@@ -160,9 +160,29 @@ SPA_DIST = Path(os.getenv("SPA_DIST", str(BASE_DIR.parent / "frontend" / "dist")
 SPA_INDEX_HTML = os.getenv("SPA_INDEX_HTML", str(SPA_DIST / "index.html"))
 STATICFILES_DIRS = [SPA_DIST] if SPA_DIST.exists() else []
 
-# User-uploaded media (artwork images, avatars)
+# User-uploaded media (artwork images, avatars). New uploads go to AWS S3 (see
+# below); MEDIA_ROOT still serves any legacy files uploaded before the S3 switch.
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))
+
+# ── AWS S3 — artist-uploaded images (artwork images + thumbnails, avatars) ────
+# Credentials are read from the environment ONLY; never hard-code them (the .env
+# is git-ignored). The upload code fails loudly when these are unset rather than
+# silently falling back to local disk.
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_S3_REGION = os.getenv("AWS_S3_REGION", "us-east-2")
+AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME", "arte-colibri")
+
+# ── OpenRouter (AI SEO generation) ───────────────────────────────────────────
+# The API key itself is stored in the DB (curator-managed), not here. These only
+# tune the endpoint/model. The model is normally chosen per-key in the dashboard;
+# OPENROUTER_MODEL just overrides the code default when a key has none set.
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "")
+
+# Public site base URL (used for OpenRouter attribution headers, etc.).
+SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://artecolibri.mx")
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

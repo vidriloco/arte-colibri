@@ -8,6 +8,7 @@ from rest_framework import serializers
 from rest_framework.authtoken.models import Token
 
 from world.models import (
+    ApiKey,
     Artist,
     Artwork,
     ArtworkImage,
@@ -18,6 +19,7 @@ from world.models import (
     Region,
     Tag,
 )
+from world.utils.openrouter import ALLOWED_MODEL_IDS
 
 from .fields import BilingualField
 
@@ -57,10 +59,16 @@ class ArtworkImageSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(f.url) if request else f.url
 
     def get_url(self, obj):
+        # Prefer the stored (S3 / seed) URL; fall back to any legacy local file.
         return obj.external_url or self._abs(obj.image)
 
     def get_thumb(self, obj):
-        return obj.external_url or self._abs(obj.thumbnail) or self._abs(obj.image)
+        return (
+            obj.thumbnail_url
+            or obj.external_url
+            or self._abs(obj.thumbnail)
+            or self._abs(obj.image)
+        )
 
 
 # ── Public artwork (read-only) ────────────────────────────────────────────────
@@ -113,6 +121,9 @@ class ArtistMiniSerializer(serializers.ModelSerializer):
         ]
 
     def get_avatar(self, obj):
+        # Prefer the stored S3 URL; fall back to any legacy local avatar file.
+        if obj.avatar_url:
+            return obj.avatar_url
         if not obj.avatar:
             return None
         request = self.context.get("request")
@@ -236,7 +247,10 @@ class ArtistOwnerSerializer(serializers.ModelSerializer):
         slug_field="slug", queryset=Region.objects.all(),
         required=False, allow_null=True,
     )
-    avatar = serializers.ImageField(required=False, allow_null=True)
+    # Read-only: the avatar is uploaded via POST /dashboard/profile/avatar/, which
+    # stores it on S3 and persists `avatar_url`. Not writable through this profile
+    # serializer.
+    avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = Artist
@@ -245,6 +259,14 @@ class ArtistOwnerSerializer(serializers.ModelSerializer):
             "instagram", "web", "since", "avatar", "status", "review_notes",
         ]
         read_only_fields = ["slug", "status", "review_notes"]
+
+    def get_avatar(self, obj):
+        if obj.avatar_url:
+            return obj.avatar_url
+        if not obj.avatar:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(obj.avatar.url) if request else obj.avatar.url
 
 
 # ── Curation ──────────────────────────────────────────────────────────────────
@@ -266,6 +288,44 @@ class ReviewArtistSerializer(ArtistDetailSerializer):
         fields = ArtistDetailSerializer.Meta.fields + [
             "id", "status", "review_notes",
         ]
+
+
+class AdminArtistSerializer(ArtistMiniSerializer):
+    """Curator account view: identity + linked auth account + every artwork
+    the artist has (any moderation status), so the panel can list accounts and
+    visualize submitted work regardless of whether it's published."""
+
+    id = serializers.IntegerField(read_only=True)
+    bio = BilingualField("bio_es", "bio_en", read_only=True)
+    status = serializers.CharField(read_only=True)
+    review_notes = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True, default=None)
+    date_joined = serializers.DateTimeField(
+        source="user.date_joined", read_only=True, default=None
+    )
+    has_account = serializers.SerializerMethodField()
+    works_count = serializers.SerializerMethodField()
+    works = serializers.SerializerMethodField()
+
+    class Meta(ArtistMiniSerializer.Meta):
+        fields = ArtistMiniSerializer.Meta.fields + [
+            "id", "bio", "status", "review_notes", "created_at",
+            "email", "date_joined", "has_account", "works_count", "works",
+        ]
+
+    def get_has_account(self, obj):
+        return obj.user_id is not None
+
+    def get_works_count(self, obj):
+        # len() over the prefetched cache — avoids an extra query per artist.
+        return len(obj.artworks.all())
+
+    def get_works(self, obj):
+        works = sorted(
+            obj.artworks.all(), key=lambda w: w.created_at, reverse=True
+        )
+        return ReviewArtworkSerializer(works, many=True, context=self.context).data
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -325,13 +385,15 @@ class PageSeoSerializer(serializers.ModelSerializer):
     )
     og_image = serializers.ImageField(read_only=True)
     og_image_url = serializers.SerializerMethodField()
+    image_alt = BilingualField("image_alt_es", "image_alt_en", required=False)
+    keywords = BilingualField("keywords_es", "keywords_en", required=False)
 
     class Meta:
         model = PageSeo
         fields = [
             "key", "key_label", "title", "description",
             "og_title", "og_description", "og_image", "og_image_url",
-            "canonical", "robots", "updated_at",
+            "image_alt", "keywords", "canonical", "robots", "updated_at",
         ]
         read_only_fields = ["og_image", "updated_at"]
 
@@ -344,6 +406,29 @@ class PageSeoSerializer(serializers.ModelSerializer):
             if request
             else obj.og_image.url
         )
+
+
+# ── API keys (curator R/W; secret is write-only) ──────────────────────────────
+class ApiKeySerializer(serializers.ModelSerializer):
+    """The secret `key_value` is write-only; reads expose only a masked preview."""
+
+    key_value = serializers.CharField(write_only=True, trim_whitespace=True)
+    label = serializers.CharField(source="get_api_type_display", read_only=True)
+    key_preview = serializers.CharField(source="preview", read_only=True)
+    is_set = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ApiKey
+        fields = ["api_type", "label", "key_value", "model", "is_set", "key_preview", "updated_at"]
+        read_only_fields = ["updated_at"]
+
+    def get_is_set(self, obj):
+        return bool(obj.key_value)
+
+    def validate_model(self, v):
+        if v and v not in ALLOWED_MODEL_IDS:
+            raise serializers.ValidationError("Unsupported model.")
+        return v
 
 
 class UserSerializer(serializers.Serializer):

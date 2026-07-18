@@ -1,7 +1,9 @@
 """API tests: visibility gating, curation, ownership, inquiry, auth, bilingual."""
 
+import json
 import tempfile
 from decimal import Decimal
+from unittest import mock
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -10,8 +12,10 @@ from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from world.models import Artist, Artwork, ArtworkImage, Inquiry, ModerationStatus, Region, Tag
-from world.models import PageSeo
+from world.models import ApiKey, ApiType, PageSeo
 from world.seo import inject_seo, render_head
+from world.utils import openrouter
+from world.utils.openrouter import OpenRouterError
 
 User = get_user_model()
 
@@ -300,51 +304,228 @@ class InquiryTests(APITestCase):
         self.assertEqual(Inquiry.objects.count(), 0)
 
 
-@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
-class ImageTests(APITestCase):
+def _png(w=40, h=50):
+    """A small, valid PNG well under every upload size limit."""
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h), (180, 60, 90)).save(buf, format="PNG")
+    buf.seek(0)
+    buf.name = "test.png"
+    return buf
+
+
+def _oversized_png(min_bytes):
+    """A valid PNG whose encoded size exceeds `min_bytes` (random noise resists
+    compression, so a modest canvas already blows past the KB limits)."""
+    import io
+    import os
+    from PIL import Image
+    for side in (500, 800, 1200, 1800):
+        buf = io.BytesIO()
+        Image.frombytes("RGB", (side, side), os.urandom(side * side * 3)).save(
+            buf, format="PNG"
+        )
+        if buf.tell() > min_bytes:
+            break
+    buf.seek(0)
+    buf.name = "big.png"
+    return buf
+
+
+class _S3MockMixin:
+    """Replace the boto3 client with a MagicMock so uploads/deletes never hit a
+    live bucket; key derivation and public-URL construction still run for real."""
+
     def setUp(self):
+        super().setUp()
+        from unittest import mock
+        self.s3_client = mock.MagicMock()
+        patcher = mock.patch(
+            "world.utils.s3._get_s3_client", return_value=self.s3_client
+        )
+        self.addCleanup(patcher.stop)
+        patcher.start()
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class ImageTests(_S3MockMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
         self.artist = make_artist("img-artist")
         self.w = make_artwork(self.artist, "img-w", status=ModerationStatus.DRAFT)
+
+    def _tok(self, email="img-artist@x.mx"):
+        return self.client.post(
+            "/api/auth/login/",
+            {"email": email, "password": "colibri123"},
+            format="json",
+        ).json()["token"]
+
+    def _upload(self, f, tok=None):
+        tok = tok or self._tok()
+        return self.client.post(
+            f"/api/dashboard/artworks/{self.w.id}/images/",
+            {"image": f},
+            format="multipart",
+            HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+
+    def test_first_image_is_primary_and_stored_on_s3(self):
+        r = self._upload(_png())
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(r.json()["is_primary"])
+        # Original + thumbnail both pushed to S3 and their URLs persisted.
+        self.assertEqual(self.s3_client.put_object.call_count, 2)
+        img = ArtworkImage.objects.get()
+        self.assertIn("arte-colibri.s3", img.external_url)
+        self.assertTrue(img.thumbnail_url.endswith(".jpg"))
+        self.assertEqual(r.json()["url"], img.external_url)
+
+    def test_non_image_rejected(self):
+        import io
+        bad = io.BytesIO(b"not an image")
+        bad.name = "bad.png"
+        r = self._upload(bad)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(ArtworkImage.objects.count(), 0)
+        self.s3_client.put_object.assert_not_called()
+
+    def test_image_within_limit_accepted(self):
+        r = self._upload(_png())
+        self.assertEqual(r.status_code, 201)
+
+    def test_oversized_image_rejected(self):
+        r = self._upload(_oversized_png(500 * 1024))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("500 KB", r.json()["image"])
+        self.assertEqual(ArtworkImage.objects.count(), 0)
+        self.s3_client.put_object.assert_not_called()
+
+    def test_non_owner_cannot_upload(self):
+        make_artist("intruder")
+        r = self._upload(_png(), tok=self._tok("intruder@x.mx"))
+        self.assertIn(r.status_code, (403, 404))
+        self.s3_client.put_object.assert_not_called()
+
+    def test_anonymous_cannot_upload(self):
+        r = self.client.post(
+            f"/api/dashboard/artworks/{self.w.id}/images/",
+            {"image": _png()},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, 401)
+
+    def test_delete_removes_s3_objects_and_reassigns_primary(self):
+        tok = self._tok()
+        first = self._upload(_png(), tok=tok).json()
+        self._upload(_png(), tok=tok)
+        self.s3_client.reset_mock()
+        r = self.client.delete(
+            f"/api/dashboard/artworks/{self.w.id}/images/{first['id']}/",
+            HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        self.assertEqual(r.status_code, 204)
+        # Both S3 objects (original + thumb) deleted; next image becomes primary.
+        self.assertEqual(self.s3_client.delete_object.call_count, 2)
+        self.assertTrue(ArtworkImage.objects.get().is_primary)
+
+    def test_delete_tolerates_missing_s3_object(self):
+        tok = self._tok()
+        img = self._upload(_png(), tok=tok).json()
+        self.s3_client.delete_object.side_effect = Exception("already gone")
+        r = self.client.delete(
+            f"/api/dashboard/artworks/{self.w.id}/images/{img['id']}/",
+            HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        self.assertEqual(r.status_code, 204)
+        self.assertEqual(ArtworkImage.objects.count(), 0)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class AvatarTests(_S3MockMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.artist = make_artist("ava-artist")
+
+    def _tok(self, email="ava-artist@x.mx"):
+        return self.client.post(
+            "/api/auth/login/",
+            {"email": email, "password": "colibri123"},
+            format="json",
+        ).json()["token"]
+
+    def _upload(self, f, tok=None):
+        tok = tok or self._tok()
+        return self.client.post(
+            "/api/dashboard/profile/avatar/",
+            {"avatar": f},
+            format="multipart",
+            HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+
+    def test_avatar_within_limit_stored_on_s3(self):
+        r = self._upload(_png())
+        self.assertEqual(r.status_code, 200)
+        self.s3_client.put_object.assert_called_once()
+        self.artist.refresh_from_db()
+        self.assertIn("artists/avatars/", self.s3_client.put_object.call_args.kwargs["Key"])
+        self.assertIn("arte-colibri.s3", self.artist.avatar_url)
+        self.assertEqual(r.json()["avatar"], self.artist.avatar_url)
+
+    def test_oversized_avatar_rejected(self):
+        r = self._upload(_oversized_png(200 * 1024))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("200 KB", r.json()["avatar"])
+        self.s3_client.put_object.assert_not_called()
+        self.artist.refresh_from_db()
+        self.assertEqual(self.artist.avatar_url, "")
+
+    def test_non_image_avatar_rejected(self):
+        import io
+        bad = io.BytesIO(b"nope")
+        bad.name = "bad.png"
+        r = self._upload(bad)
+        self.assertEqual(r.status_code, 400)
+        self.s3_client.put_object.assert_not_called()
+
+    def test_anonymous_cannot_set_avatar(self):
+        r = self.client.post(
+            "/api/dashboard/profile/avatar/", {"avatar": _png()}, format="multipart"
+        )
+        self.assertEqual(r.status_code, 401)
+
+
+@override_settings(
+    MEDIA_ROOT=tempfile.mkdtemp(),
+    AWS_ACCESS_KEY_ID=None,
+    AWS_SECRET_ACCESS_KEY=None,
+)
+class S3UnconfiguredTests(APITestCase):
+    """With no AWS credentials the upload fails loudly instead of silently
+    writing to local disk."""
+
+    def setUp(self):
+        self.artist = make_artist("noaws-artist")
+        self.w = make_artwork(self.artist, "noaws-w", status=ModerationStatus.DRAFT)
 
     def _tok(self):
         return self.client.post(
             "/api/auth/login/",
-            {"email": "img-artist@x.mx", "password": "colibri123"},
+            {"email": "noaws-artist@x.mx", "password": "colibri123"},
             format="json",
         ).json()["token"]
 
-    def _png(self):
-        import io
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new("RGB", (40, 50), (180, 60, 90)).save(buf, format="PNG")
-        buf.seek(0)
-        buf.name = "test.png"
-        return buf
-
-    def test_first_image_is_primary(self):
-        tok = self._tok()
+    def test_upload_without_credentials_errors_and_writes_nothing(self):
+        self.client.raise_request_exception = False
         r = self.client.post(
             f"/api/dashboard/artworks/{self.w.id}/images/",
-            {"image": self._png()},
+            {"image": _png()},
             format="multipart",
-            HTTP_AUTHORIZATION=f"Token {tok}",
+            HTTP_AUTHORIZATION=f"Token {self._tok()}",
         )
-        self.assertEqual(r.status_code, 201)
-        self.assertTrue(r.json()["is_primary"])
-
-    def test_non_image_rejected(self):
-        import io
-        tok = self._tok()
-        bad = io.BytesIO(b"not an image")
-        bad.name = "bad.png"
-        r = self.client.post(
-            f"/api/dashboard/artworks/{self.w.id}/images/",
-            {"image": bad},
-            format="multipart",
-            HTTP_AUTHORIZATION=f"Token {tok}",
-        )
-        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.status_code, 500)
+        # The just-created row is rolled back; no image persists.
         self.assertEqual(ArtworkImage.objects.count(), 0)
 
 
@@ -373,6 +554,19 @@ class SeoResolutionTests(APITestCase):
         r = self.client.get("/api/seo/?page=bogus")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["key"], "default")
+
+    def test_resolve_includes_image_alt_and_keywords(self):
+        PageSeo.objects.create(
+            key="home",
+            image_alt_es="Colección Arte Colibrí",
+            keywords_es="arte, galería, CDMX",
+        )
+        r = self.client.get("/api/seo/?page=home").json()
+        for field in ("image_alt", "keywords"):
+            self.assertIn("es", r[field])
+            self.assertIn("en", r[field])
+        self.assertEqual(r["image_alt"]["es"], "Colección Arte Colibrí")
+        self.assertEqual(r["keywords"]["es"], "arte, galería, CDMX")
 
 
 class SeoPermissionTests(APITestCase):
@@ -427,6 +621,22 @@ class SeoPermissionTests(APITestCase):
         self.assertEqual(pub["title"]["es"], "Galería curada")
         self.assertEqual(pub["robots"], "noindex,follow")
 
+    def test_curator_saves_image_alt_and_keywords(self):
+        tok = self._ctoken()
+        r = self.client.patch(
+            "/api/curation/seo/home/",
+            {
+                "image_alt": {"es": "Portada", "en": "Cover"},
+                "keywords": {"es": "arte, galería", "en": "art, gallery"},
+            },
+            format="json",
+            HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        self.assertEqual(r.status_code, 200)
+        pub = self.client.get("/api/seo/?page=home").json()
+        self.assertEqual(pub["image_alt"]["en"], "Cover")
+        self.assertEqual(pub["keywords"]["es"], "arte, galería")
+
 
 class SeoInjectionTests(APITestCase):
     SHELL = (
@@ -444,6 +654,8 @@ class SeoInjectionTests(APITestCase):
                 "robots": "noindex,follow",
                 "canonical": "https://x/y",
                 "image": "https://x/i.jpg",
+                "image_alt": "A photo",
+                "keywords": "art, gallery",
                 "url": "https://x/y",
             }
         )
@@ -451,6 +663,14 @@ class SeoInjectionTests(APITestCase):
         self.assertIn('name="robots" content="noindex,follow"', head)
         self.assertIn('rel="canonical" href="https://x/y"', head)
         self.assertIn('property="og:image" content="https://x/i.jpg"', head)
+        self.assertIn('name="keywords" content="art, gallery"', head)
+        self.assertIn('property="og:image:alt" content="A photo"', head)
+        self.assertIn('name="twitter:image:alt" content="A photo"', head)
+
+    def test_render_head_omits_empty_optional_tags(self):
+        head = render_head({"title": "T", "description": "D"})
+        self.assertNotIn('name="keywords"', head)  # no keywords → tag omitted
+        self.assertNotIn("og:image:alt", head)  # no image → no alt
 
     def test_inject_replaces_title_and_lang(self):
         out = inject_seo(self.SHELL, {"title": "New", "description": "N", "lang": "es"})
@@ -471,3 +691,177 @@ class SeoInjectionTests(APITestCase):
         html = self.client.get("/artwork/ssr-work/").content.decode()
         self.assertIn("ssr-work es", html)  # artwork title_es appears in <title>
         self.assertIn("Ssr-Artist", html)
+
+
+def _curator(email="curk@x.mx"):
+    user = User.objects.create_user(username=email, password="colibri123")
+    g, _ = Group.objects.get_or_create(name=settings.CURATOR_GROUP)
+    user.groups.add(g)
+    return user
+
+
+class ApiKeysTests(APITestCase):
+    def setUp(self):
+        _curator()
+        make_artist("plain-artist-k")  # for the non-curator case
+
+    def _ctok(self):
+        return self.client.post(
+            "/api/auth/login/", {"email": "curk@x.mx", "password": "colibri123"}, format="json"
+        ).json()["token"]
+
+    def test_upsert_masks_secret_and_lists_models(self):
+        tok = self._ctok()
+        r = self.client.put(
+            "/api/curation/api-keys/",
+            {"api_type": "openrouter", "key_value": "sk-secret-abcd", "model": "openai/gpt-4o-mini"},
+            format="json", HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["is_set"])
+        self.assertNotIn("sk-secret-abcd", json.dumps(r.json()))  # never echoed
+        lst = self.client.get("/api/curation/api-keys/", HTTP_AUTHORIZATION=f"Token {tok}").json()
+        row = next(k for k in lst["keys"] if k["api_type"] == "openrouter")
+        self.assertTrue(row["is_set"])
+        self.assertEqual(row["key_preview"], "…abcd")
+        self.assertEqual(row["model"], "openai/gpt-4o-mini")
+        self.assertNotIn("sk-secret-abcd", json.dumps(lst))  # secret never in list
+        self.assertEqual(len(lst["models"]), 4)  # price/power-equivalent model options
+
+    def test_model_only_update_keeps_key(self):
+        tok = self._ctok()
+        self.client.put(
+            "/api/curation/api-keys/", {"api_type": "openrouter", "key_value": "sk-first-1111"},
+            format="json", HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        r = self.client.put(
+            "/api/curation/api-keys/", {"api_type": "openrouter", "model": "google/gemini-2.0-flash-001"},
+            format="json", HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        self.assertEqual(r.status_code, 200)
+        k = ApiKey.objects.get(api_type="openrouter")
+        self.assertEqual(k.key_value, "sk-first-1111")  # secret preserved
+        self.assertEqual(k.model, "google/gemini-2.0-flash-001")
+
+    def test_invalid_model_rejected(self):
+        tok = self._ctok()
+        r = self.client.put(
+            "/api/curation/api-keys/", {"api_type": "openrouter", "key_value": "x", "model": "evil/pricey"},
+            format="json", HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete(self):
+        tok = self._ctok()
+        self.client.put(
+            "/api/curation/api-keys/", {"api_type": "openrouter", "key_value": "sk-x-1234"},
+            format="json", HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        r = self.client.delete("/api/curation/api-keys/openrouter/", HTTP_AUTHORIZATION=f"Token {tok}")
+        self.assertEqual(r.status_code, 204)
+        self.assertFalse(ApiKey.objects.filter(api_type="openrouter").exists())
+
+    def test_non_curator_and_anon_blocked(self):
+        self.assertIn(self.client.get("/api/curation/api-keys/").status_code, (401, 403))
+        atok = self.client.post(
+            "/api/auth/login/", {"email": "plain-artist-k@x.mx", "password": "colibri123"}, format="json"
+        ).json()["token"]
+        r = self.client.put(
+            "/api/curation/api-keys/", {"api_type": "openrouter", "key_value": "x"},
+            format="json", HTTP_AUTHORIZATION=f"Token {atok}",
+        )
+        self.assertIn(r.status_code, (401, 403))
+
+
+class SeoGenerateTests(APITestCase):
+    def setUp(self):
+        _curator()
+
+    def _ctok(self):
+        return self.client.post(
+            "/api/auth/login/", {"email": "curk@x.mx", "password": "colibri123"}, format="json"
+        ).json()["token"]
+
+    def _key(self, model=""):
+        ApiKey.objects.create(api_type=ApiType.OPENROUTER, key_value="sk-test-1234", model=model)
+
+    def test_generate_returns_bilingual_and_saves_nothing(self):
+        self._key()
+        PageSeo.objects.create(key="home", description_es="Una galería de arte curado.")
+        fields = ["title", "description", "og_title", "og_description", "keywords", "image_alt"]
+        fake = {f: {"es": f + "_es", "en": f + "_en"} for f in fields}
+        with mock.patch("world.api.views.generate_seo", return_value=fake) as m:
+            r = self.client.post(
+                "/api/curation/seo/home/generate/", {}, format="json",
+                HTTP_AUTHORIZATION=f"Token {self._ctok()}",
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["title"]["es"], "title_es")
+        self.assertEqual(m.call_args[0][1], "es")  # Spanish is the source
+        self.assertEqual(PageSeo.objects.get(key="home").title_es, "")  # nothing saved
+
+    def test_generate_uses_english_when_no_spanish(self):
+        self._key()
+        PageSeo.objects.create(key="home", description_en="A curated gallery.")
+        with mock.patch("world.api.views.generate_seo", return_value={}) as m:
+            self.client.post(
+                "/api/curation/seo/home/generate/", {}, format="json",
+                HTTP_AUTHORIZATION=f"Token {self._ctok()}",
+            )
+        self.assertEqual(m.call_args[0][1], "en")
+
+    def test_generate_409_without_key(self):
+        PageSeo.objects.create(key="home", description_es="x")
+        r = self.client.post(
+            "/api/curation/seo/home/generate/", {}, format="json",
+            HTTP_AUTHORIZATION=f"Token {self._ctok()}",
+        )
+        self.assertEqual(r.status_code, 409)
+
+    def test_generate_400_without_description(self):
+        self._key()  # home slot auto-materializes blank
+        r = self.client.post(
+            "/api/curation/seo/home/generate/", {}, format="json",
+            HTTP_AUTHORIZATION=f"Token {self._ctok()}",
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_generate_provider_error_leaves_slot_untouched(self):
+        self._key()
+        PageSeo.objects.create(key="home", description_es="x", title_es="")
+        with mock.patch("world.api.views.generate_seo", side_effect=OpenRouterError("boom")):
+            r = self.client.post(
+                "/api/curation/seo/home/generate/", {}, format="json",
+                HTTP_AUTHORIZATION=f"Token {self._ctok()}",
+            )
+        self.assertEqual(r.status_code, 502)
+        self.assertEqual(PageSeo.objects.get(key="home").title_es, "")
+
+
+class OpenRouterClientTests(APITestCase):
+    def test_parses_valid_json_and_normalizes_missing_fields(self):
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({"title": {"es": "T", "en": "Te"}})}}]
+        }
+        with mock.patch("world.utils.openrouter.requests.post", return_value=resp):
+            out = openrouter.generate_seo("desc", "es", api_key="k", model="openai/gpt-4o-mini")
+        self.assertEqual(out["title"], {"es": "T", "en": "Te"})
+        self.assertEqual(out["keywords"], {"es": "", "en": ""})  # missing field filled in
+
+    def test_bad_json_raises(self):
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = {"choices": [{"message": {"content": "not json"}}]}
+        with mock.patch("world.utils.openrouter.requests.post", return_value=resp):
+            with self.assertRaises(OpenRouterError):
+                openrouter.generate_seo("d", "es", api_key="k")
+
+    def test_http_error_raises(self):
+        resp = mock.Mock(status_code=402, text="no credits")
+        with mock.patch("world.utils.openrouter.requests.post", return_value=resp):
+            with self.assertRaises(OpenRouterError):
+                openrouter.generate_seo("d", "es", api_key="k")
+
+    def test_unknown_model_falls_back_to_default(self):
+        self.assertEqual(openrouter.resolve_model("evil/pricey"), openrouter.DEFAULT_MODEL)
+        self.assertEqual(openrouter.resolve_model("openai/gpt-4o-mini"), "openai/gpt-4o-mini")
