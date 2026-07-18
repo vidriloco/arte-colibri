@@ -13,6 +13,55 @@ export const DISCIPLINES = [
   { value: "otra", es: "Otra", en: "Other" },
 ];
 
+// Common techniques for the artwork "Técnica / medio" selector, grouped by
+// discipline. The Spanish label doubles as the option value; "Otra…" reveals a
+// free-text input so anything not listed (photography, textile, …) still works.
+export const MEDIA_TECHNIQUES = [
+  {
+    label: { es: "Pintura", en: "Painting" },
+    options: [
+      { es: "Óleo", en: "Oil" },
+      { es: "Acrílico", en: "Acrylic" },
+      { es: "Acuarela", en: "Watercolor" },
+      { es: "Gouache", en: "Gouache" },
+      { es: "Pastel", en: "Pastel" },
+      { es: "Tinta", en: "Ink" },
+      { es: "Témpera", en: "Tempera" },
+      { es: "Encáustica", en: "Encaustic" },
+      { es: "Técnica mixta", en: "Mixed media" },
+    ],
+  },
+  {
+    label: { es: "Escultura", en: "Sculpture" },
+    options: [
+      { es: "Talla en madera", en: "Wood carving" },
+      { es: "Talla en piedra", en: "Stone carving" },
+      { es: "Fundición en bronce", en: "Bronze casting" },
+      { es: "Metal soldado", en: "Welded metal" },
+      { es: "Modelado", en: "Modeling" },
+      { es: "Yeso", en: "Plaster" },
+      { es: "Resina", en: "Resin" },
+      { es: "Ensamblaje", en: "Assemblage" },
+    ],
+  },
+  {
+    label: { es: "Cerámica", en: "Ceramics" },
+    options: [
+      { es: "Gres (alta temperatura)", en: "Stoneware" },
+      { es: "Barro", en: "Earthenware" },
+      { es: "Porcelana", en: "Porcelain" },
+      { es: "Raku", en: "Raku" },
+      { es: "Modelado a mano", en: "Hand-building" },
+      { es: "Torno", en: "Wheel-throwing" },
+      { es: "Esmalte", en: "Glazed" },
+    ],
+  },
+];
+
+const MEDIA_OTHER = "__otra__";
+const flatTechniques = MEDIA_TECHNIQUES.flatMap((g) => g.options);
+const findTechniqueByEs = (es) => flatTechniques.find((o) => o.es === es) || null;
+
 export function ApplyField({ label, error, hint, required, children }) {
   return (
     <label className={"apply__field" + (error ? " has-error" : "")}>
@@ -145,11 +194,16 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
 }
 
 // ── Artwork form (create/edit + image management) ───────────────────────────
-const emptyArtwork = (a) => ({
+const emptyArtwork = (a) => {
+  const mediumEs = bi(a?.medium, "es") || "";
+  const known = findTechniqueByEs(mediumEs);
+  return {
   titleEs: bi(a?.title, "es") || "",
   // Raw English (not the bi() fallback) so an unset English stays blank.
   titleEn: a?.title?.en || "",
-  medium: bi(a?.medium, "es") || "",
+  // A known technique preselects its option; anything else → "Otra" + free text.
+  mediumSel: mediumEs ? (known ? mediumEs : MEDIA_OTHER) : "",
+  mediumCustom: known ? "" : mediumEs,
   dimensions: a?.dimensions || "",
   year: a?.year || new Date().getFullYear(),
   price: a?.price ? String(parseFloat(a.price)) : "",
@@ -158,7 +212,8 @@ const emptyArtwork = (a) => ({
   tags: a?.tags || [],
   description: bi(a?.description, "es") || "",
   descriptionEn: a?.description?.en || "",
-});
+  };
+};
 
 export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
   const { lang, t } = useLang();
@@ -181,7 +236,10 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
     const er = {};
     if (!form.titleEs.trim()) er.titleEs = t("form_required");
     // English title is optional — display falls back to Spanish.
-    if (!form.medium.trim()) er.medium = t("form_required");
+    const mediumOtra = form.mediumSel === MEDIA_OTHER;
+    const tech = mediumOtra ? null : findTechniqueByEs(form.mediumSel);
+    const mediumEsVal = (mediumOtra ? form.mediumCustom : form.mediumSel).trim();
+    if (!mediumEsVal) er.medium = t("form_required");
     if (!form.dimensions.trim()) er.dimensions = t("form_required");
     if (form.availability !== "nfs" && !String(form.price).trim()) er.price = t("form_required");
     if (!form.description.trim()) er.description = t("form_required");
@@ -191,9 +249,12 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
       form.availability === "sold" && String(form.soldPrice).trim()
         ? form.soldPrice
         : null;
+    const medium = tech
+      ? { es: tech.es, en: tech.en }
+      : { es: mediumEsVal, en: mediumEsVal };
     const payload = {
       title: { es: form.titleEs, en: form.titleEn },
-      medium: { es: form.medium, en: form.medium },
+      medium,
       description: { es: form.description, en: form.descriptionEn },
       dimensions: form.dimensions,
       year: Number(form.year),
@@ -274,7 +335,21 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
         </div>
         <div className="apply__row apply__row--2">
           <ApplyField label={t("apply_medium")} error={errors.medium} required>
-            <input type="text" placeholder={t("apply_medium_ph")} value={form.medium} onChange={(e) => set("medium", e.target.value)} />
+            <select value={form.mediumSel} onChange={(e) => set("mediumSel", e.target.value)}>
+              <option value="">{lang === "es" ? "Seleccionar…" : "Select…"}</option>
+              {MEDIA_TECHNIQUES.map((g) => (
+                <optgroup key={g.label.es} label={lang === "es" ? g.label.es : g.label.en}>
+                  {g.options.map((o) => (
+                    <option key={o.es} value={o.es}>{lang === "es" ? o.es : o.en}</option>
+                  ))}
+                </optgroup>
+              ))}
+              <option value={MEDIA_OTHER}>{lang === "es" ? "Otra…" : "Other…"}</option>
+            </select>
+            {form.mediumSel === MEDIA_OTHER && (
+              <input type="text" className="apply__subinput" placeholder={t("apply_medium_ph")}
+                     value={form.mediumCustom} onChange={(e) => set("mediumCustom", e.target.value)} />
+            )}
           </ApplyField>
           <ApplyField label={t("apply_dimensions")} error={errors.dimensions} required>
             <input type="text" placeholder={t("apply_dimensions_ph")} value={form.dimensions} onChange={(e) => set("dimensions", e.target.value)} />
