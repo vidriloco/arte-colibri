@@ -3,3 +3,7 @@ Django
 geojson
 requests
 django-apscheduler
+djangorestframework
+django-cors-headers
+Pillow
+whitenoise

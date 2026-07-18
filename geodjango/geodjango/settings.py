@@ -24,9 +24,15 @@ BASE_DIR = Path(__file__).resolve(strict=True).parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "top_secret")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DJANGO_DEBUG", "True").strip().lower() not in ("0", "false", "no")
 
-ALLOWED_HOSTS = ["127.0.0.1", "137.184.81.85", "localhost"]
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.getenv(
+        "DJANGO_ALLOWED_HOSTS", "127.0.0.1,137.184.81.85,localhost"
+    ).split(",")
+    if h.strip()
+]
 
 
 # Application definition
@@ -39,11 +45,15 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.gis',
+    'rest_framework',
+    'rest_framework.authtoken',
+    'corsheaders',
     'world',
     'django_apscheduler'
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -52,6 +62,18 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# WhiteNoise serves the built SPA's static assets in production. Optional in dev
+# (Vite serves the SPA and runserver serves static), so only wire it if installed.
+try:
+    import whitenoise  # noqa: F401
+
+    MIDDLEWARE.insert(
+        MIDDLEWARE.index('django.middleware.security.SecurityMiddleware') + 1,
+        'whitenoise.middleware.WhiteNoiseMiddleware',
+    )
+except ImportError:
+    pass
 
 ROOT_URLCONF = 'geodjango.urls'
 
@@ -127,3 +149,47 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/3.1/howto/static-files/
 
 STATIC_URL = '/static/'
+STATIC_ROOT = os.getenv("STATIC_ROOT", str(BASE_DIR / "staticfiles"))
+
+# The built React SPA. In production Django serves its `index.html` (with
+# server-injected SEO, see world/seo.py) and WhiteNoise serves the hashed assets.
+# Build it with `npm --prefix frontend run build` (Vite `base:/static/`), then
+# `manage.py collectstatic`. In dev the SPA is served by Vite instead, so `dist`
+# may be absent — only register it as a static dir when it exists.
+SPA_DIST = Path(os.getenv("SPA_DIST", str(BASE_DIR.parent / "frontend" / "dist")))
+SPA_INDEX_HTML = os.getenv("SPA_INDEX_HTML", str(SPA_DIST / "index.html"))
+STATICFILES_DIRS = [SPA_DIST] if SPA_DIST.exists() else []
+
+# User-uploaded media (artwork images, avatars)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ── Django REST Framework — the JSON API the React SPA consumes ──────────────
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.AllowAny",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 8,
+}
+
+# ── CORS — the SPA is served from a separate origin in dev (Vite) ────────────
+CORS_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if o.strip()
+]
+CORS_ALLOW_CREDENTIALS = True
+
+# Role group names used by the curation workflow.
+ARTIST_GROUP = "Artist"
+CURATOR_GROUP = "Curator"
