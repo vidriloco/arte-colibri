@@ -16,6 +16,8 @@ from rest_framework.views import APIView
 from world.imaging import (
     ARTWORK_IMAGE_MAX_BYTES,
     AVATAR_MAX_BYTES,
+    UPLOAD_MAX_BYTES,
+    compress_to_jpeg,
     make_thumbnail,
     validate_image,
 )
@@ -312,12 +314,18 @@ class DashboardAvatarView(APIView):
             return Response(
                 {"avatar": "No file provided."}, status=status.HTTP_400_BAD_REQUEST
             )
-        # Reject non-images and anything over 200 KB before touching S3.
+        # Reject non-images / absurd uploads only; the avatar is compressed to a
+        # JPEG ≤ 200 KB (resized as needed) rather than rejected merely for size.
         try:
-            validate_image(f, max_bytes=AVATAR_MAX_BYTES)
+            validate_image(f, max_bytes=UPLOAD_MAX_BYTES, check_dimension=False)
         except ValueError as e:
             return Response({"avatar": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        artist.avatar_url = s3.upload_fileobj(f, s3.avatar_key(artist, f))
+        jpeg = compress_to_jpeg(f, max_bytes=AVATAR_MAX_BYTES, name="avatar.jpg")
+        artist.avatar_url = s3.put_bytes_to_s3(
+            jpeg.read(),
+            s3.avatar_key(artist, content_type="image/jpeg"),
+            content_type="image/jpeg",
+        )
         artist.save(update_fields=["avatar_url"])
         return Response(ArtistOwnerSerializer(artist, context={"request": request}).data)
 
@@ -360,9 +368,10 @@ class DashboardArtworkViewSet(viewsets.ModelViewSet):
             return Response(
                 {"image": "No file provided."}, status=status.HTTP_400_BAD_REQUEST
             )
-        # Reject non-images and anything over 500 KB before touching S3.
+        # Reject non-images / absurd uploads only; the image is compressed to a
+        # JPEG ≤ 700 KB (resized as needed) rather than rejected merely for size.
         try:
-            validate_image(f, max_bytes=ARTWORK_IMAGE_MAX_BYTES)
+            validate_image(f, max_bytes=UPLOAD_MAX_BYTES, check_dimension=False)
         except ValueError as e:
             return Response({"image": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -371,9 +380,14 @@ class DashboardArtworkViewSet(viewsets.ModelViewSet):
             artwork=artwork, position=count, is_primary=(count == 0)
         )
         # Keys are namespaced by the artwork slug + the new image id, so create
-        # the row first, then upload the original + generated thumbnail.
+        # the row first, then upload the compressed JPEG + generated thumbnail.
         try:
-            img.external_url = s3.upload_fileobj(f, s3.artwork_image_key(img, f))
+            jpeg = compress_to_jpeg(f, max_bytes=ARTWORK_IMAGE_MAX_BYTES, name=f"{img.id}.jpg")
+            img.external_url = s3.put_bytes_to_s3(
+                jpeg.read(),
+                s3.artwork_image_key(img, content_type="image/jpeg"),
+                content_type="image/jpeg",
+            )
             thumb = make_thumbnail(f, name=f"{img.id}.jpg")
             img.thumbnail_url = s3.put_bytes_to_s3(
                 thumb.read(), s3.artwork_thumb_key(img), content_type="image/jpeg"

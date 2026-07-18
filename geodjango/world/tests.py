@@ -1,5 +1,6 @@
 """API tests: visibility gating, curation, ownership, inquiry, auth, bilingual."""
 
+import io
 import json
 import tempfile
 from decimal import Decimal
@@ -333,6 +334,16 @@ def _oversized_png(min_bytes):
     return buf
 
 
+class CompressImageTests(APITestCase):
+    def test_compresses_large_image_under_limit_as_jpeg(self):
+        from world.imaging import compress_to_jpeg
+        out = compress_to_jpeg(_oversized_png(900 * 1024), max_bytes=300 * 1024)
+        data = out.read()
+        self.assertLessEqual(len(data), 300 * 1024)
+        from PIL import Image
+        self.assertEqual(Image.open(io.BytesIO(data)).format, "JPEG")
+
+
 class _S3MockMixin:
     """Replace the boto3 client with a MagicMock so uploads/deletes never hit a
     live bucket; key derivation and public-URL construction still run for real."""
@@ -395,12 +406,16 @@ class ImageTests(_S3MockMixin, APITestCase):
         r = self._upload(_png())
         self.assertEqual(r.status_code, 201)
 
-    def test_oversized_image_rejected(self):
-        r = self._upload(_oversized_png(500 * 1024))
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("500 KB", r.json()["image"])
-        self.assertEqual(ArtworkImage.objects.count(), 0)
-        self.s3_client.put_object.assert_not_called()
+    def test_large_image_compressed_to_jpeg(self):
+        # A large source is accepted and stored as a JPEG within the 700 KB limit.
+        r = self._upload(_oversized_png(900 * 1024))
+        self.assertEqual(r.status_code, 201)
+        img = ArtworkImage.objects.get()
+        self.assertTrue(img.external_url.endswith(".jpg"))
+        calls = [c.kwargs for c in self.s3_client.put_object.call_args_list]
+        orig = next(c for c in calls if "thumbs/" not in c["Key"])
+        self.assertEqual(orig["ContentType"], "image/jpeg")
+        self.assertLessEqual(len(orig["Body"]), 700 * 1024)
 
     def test_non_owner_cannot_upload(self):
         make_artist("intruder")
@@ -473,13 +488,14 @@ class AvatarTests(_S3MockMixin, APITestCase):
         self.assertIn("arte-colibri.s3", self.artist.avatar_url)
         self.assertEqual(r.json()["avatar"], self.artist.avatar_url)
 
-    def test_oversized_avatar_rejected(self):
-        r = self._upload(_oversized_png(200 * 1024))
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("200 KB", r.json()["avatar"])
-        self.s3_client.put_object.assert_not_called()
+    def test_large_avatar_compressed_to_jpeg(self):
+        r = self._upload(_oversized_png(400 * 1024))
+        self.assertEqual(r.status_code, 200)
         self.artist.refresh_from_db()
-        self.assertEqual(self.artist.avatar_url, "")
+        self.assertTrue(self.artist.avatar_url.endswith(".jpg"))
+        kw = self.s3_client.put_object.call_args.kwargs
+        self.assertEqual(kw["ContentType"], "image/jpeg")
+        self.assertLessEqual(len(kw["Body"]), 200 * 1024)
 
     def test_non_image_avatar_rejected(self):
         import io
