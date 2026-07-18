@@ -1,0 +1,29 @@
+# VCS / tooling
+.git
+.gitignore
+.dockerignore
+.agents
+
+# Build artifacts not needed in the image
+graphics-src
+README.md
+Dockerfile
+docker-compose*.yml
+docker-compose*.yaml
+
+# Frontend (built/run separately; not part of the Django image)
+frontend/node_modules
+frontend/dist
+
+# Python caches
+**/__pycache__
+*.py[cod]
+
+# Local data / secrets / virtualenvs
+*.sqlite3
+.env
+.venv
+venv
+
+# OS cruft
+.DS_Store

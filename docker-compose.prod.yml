@@ -1,0 +1,29 @@
+# Production overrides. NOT applied automatically — opt in explicitly:
+#   docker compose -f docker-compose.yaml -f docker-compose.prod.yml up -d --build
+#
+# No bind mount here: the image's baked-in code is served as-is.
+services:
+  app:
+    ports:
+      - "8100:8000"
+    environment:
+      # Takes effect once settings.py reads DJANGO_DEBUG (left to you — see review notes).
+      DJANGO_DEBUG: "False"
+    # Production WSGI server. REQUIRES `gunicorn` in requirements.txt; until you add it
+    # the image's default CMD (runserver) is used. Uncomment once gunicorn is installed:
+    # command: gunicorn --chdir geodjango geodjango.wsgi:application --bind 0.0.0.0:8000 --workers 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  db:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G

@@ -1,0 +1,29 @@
+# Development overrides — applied automatically by `docker compose up`.
+# Bind-mounts the source for live reload and runs Django's dev server.
+services:
+  app:
+    volumes:
+      - .:/usr/src/app
+      - media:/usr/src/app/media
+    ports:
+      - "8100:8000"
+    command: python geodjango/manage.py runserver 0.0.0.0:8000
+
+  # React SPA dev server (Vite). The browser loads it on :5173; Vite proxies
+  # /api and /media to the Django `app` service. You can also just run
+  # `npm --prefix frontend run dev` on the host instead of this container.
+  frontend:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_BACKEND: http://app:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - app
+    networks:
+      - backend
