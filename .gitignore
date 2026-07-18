@@ -2,3 +2,11 @@
 __pycache__/
 *.py[cod]
 *DS_Store
+
+# Frontend (Vite/React)
+frontend/node_modules/
+frontend/dist/
+
+# Local media uploads
+geodjango/media/
+media/
