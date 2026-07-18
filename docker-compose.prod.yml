@@ -9,14 +9,13 @@ services:
     ports:
       - "127.0.0.1:8100:8000"
     environment:
-      # Values interpolate from the .env file that scripts/prod.sh maintains.
+      # Prod-only Django hardening (interpolated from the .env scripts/prod.sh
+      # maintains). Everything else — DB, Turnstile, AWS — is inherited from
+      # docker-compose.yaml and filled from the same .env.
       DJANGO_DEBUG: "False"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?missing — run scripts/prod.sh up to generate .env}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
-      # Cloudflare Turnstile (bot protection for public forms).
-      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
     # Production WSGI server (replaces the image's default runserver CMD).
     command: gunicorn --chdir geodjango geodjango.wsgi:application --bind 0.0.0.0:8000 --workers 3
     deploy:

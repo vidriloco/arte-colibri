@@ -7,11 +7,9 @@ services:
       - media:/usr/src/app/media
     ports:
       - "8100:8000"
-    # Optional in dev: fill these in .env to exercise the real Turnstile flow;
-    # left empty, verification is disabled and forms submit without a token.
-    environment:
-      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+    # No env here — the app's runtime config (DB, Turnstile, AWS) is declared
+    # once in docker-compose.yaml and read from the root .env. Dev uses
+    # settings.py's own defaults for DEBUG / SECRET_KEY / ALLOWED_HOSTS.
     command: python geodjango/manage.py runserver 0.0.0.0:8000
 
   # React SPA dev server (Vite). The browser loads it on :5173; Vite proxies

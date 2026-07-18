@@ -2,6 +2,16 @@
 #   dev  (default):  ./scripts/dev.sh           -> merges docker-compose.override.yml
 #   prod:            ./scripts/prod.sh           -> merges docker-compose.prod.yml
 #
+# Environment is layered — one root `.env` (next to these files) feeds every
+# ${VAR} below, and each compose file owns a distinct slice:
+#   • THIS base file — the app's shared runtime env: internal DB wiring
+#     (literals) + every .env-driven credential (Turnstile, AWS) with safe
+#     defaults. Applies to BOTH dev and prod.
+#   • docker-compose.prod.yml — ONLY prod hardening (DEBUG off, a required
+#     SECRET_KEY, prod hosts) + the gunicorn command and resource limits.
+#   • docker-compose.override.yml (dev) — ONLY dev mechanics (bind mount,
+#     runserver, exposed port). No env; dev leans on settings.py defaults.
+#
 # An explicit project name namespaces every container/volume/network as
 # "arte-colibri-*" so they never clash with other apps on the same host
 # (e.g. container arte-colibri-db-1, volume arte-colibri_postgres_data).
@@ -13,15 +23,23 @@ services:
       dockerfile: Dockerfile
     image: arte-colibri-app
     environment:
+      # ── Internal service wiring (matches the `db` service below) ──────────
       DB_HOST: db
       DB_PORT: 5432
       DB_NAME: tenochtitlan
       DB_USER: tlaloc
       DB_PASSWORD: passw0rd
-      # Legacy user-uploaded media (pre-S3) lives on a named volume so those
-      # files survive container replacement. New uploads go to AWS S3.
+      # Legacy local media (pre-S3) on a named volume; new uploads go to S3.
       MEDIA_ROOT: /usr/src/app/media
-      # AWS S3 for artist-uploaded images — values come from the host .env.
+      # ── External-service credentials, read from the root .env ─────────────
+      # Each uses ${VAR:-default}; unset in .env → the default. Secrets default
+      # to "" so the feature simply stays off/unconfigured (never a hard error).
+      # Cloudflare Turnstile (bot protection on public forms) — empty = disabled.
+      # To exercise it in dev, set these two in the root .env.
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # AWS S3 for artist-uploaded images — empty key surfaces a clear
+      # "storage not configured" error instead of failing silently.
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_S3_REGION: ${AWS_S3_REGION:-us-east-2}
