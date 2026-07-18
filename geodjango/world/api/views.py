@@ -223,6 +223,8 @@ class MetaView(APIView):
                 # Public site key for the SPA's Turnstile widgets; empty means
                 # Turnstile is disabled and forms submit without a token.
                 "turnstile_site_key": settings.TURNSTILE_SITE_KEY,
+                # Mapbox public token; empty disables the map + municipality search.
+                "mapbox_token": settings.MAPBOX_TOKEN,
             }
         )
 

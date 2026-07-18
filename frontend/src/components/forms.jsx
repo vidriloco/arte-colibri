@@ -2,6 +2,7 @@ import React from "react";
 import { useLang, bi } from "../i18n.jsx";
 import { Public, Dash } from "../api.js";
 import { useFetch } from "../hooks.js";
+import { LocationField } from "./LocationField.jsx";
 
 export const DISCIPLINES = [
   { value: "pintura", es: "Pintura", en: "Painting" },
@@ -79,6 +80,8 @@ export function ApplyField({ label, error, hint, required, children }) {
 // ── Profile form ─────────────────────────────────────────────────────────────
 const emptyProfile = (artist) => ({
   city: artist?.city || "",
+  lat: artist?.location?.lat ?? null,
+  lng: artist?.location?.lng ?? null,
   disciplineValue:
     DISCIPLINES.find((d) => d.es === bi(artist?.discipline, "es"))?.value || "",
   instagram: artist?.instagram || "",
@@ -131,6 +134,8 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
     try {
       const saved = await Dash.saveProfile({
         city: form.city,
+        lat: form.lat ?? null,
+        lng: form.lng ?? null,
         discipline: { es: disc.es, en: disc.en },
         bio: { es: form.statement, en: form.statement },
         instagram: form.instagram,
@@ -160,19 +165,20 @@ export function ProfileForm({ artist, onSaved, submitLabel, onBack }) {
             </label>
           </div>
         </ApplyField>
-        <div className="apply__row apply__row--2">
-          <ApplyField label={t("apply_city")} error={errors.city} required>
-            <input type="text" value={form.city} onChange={(e) => set("city", e.target.value)} />
-          </ApplyField>
-          <ApplyField label={t("apply_discipline")} error={errors.discipline} required>
-            <select value={form.disciplineValue} onChange={(e) => set("disciplineValue", e.target.value)}>
-              <option value="">{lang === "es" ? "Seleccionar…" : "Select…"}</option>
-              {DISCIPLINES.map((d) => (
-                <option key={d.value} value={d.value}>{lang === "es" ? d.es : d.en}</option>
-              ))}
-            </select>
-          </ApplyField>
-        </div>
+        <ApplyField label={t("apply_discipline")} error={errors.discipline} required>
+          <select value={form.disciplineValue} onChange={(e) => set("disciplineValue", e.target.value)}>
+            <option value="">{lang === "es" ? "Seleccionar…" : "Select…"}</option>
+            {DISCIPLINES.map((d) => (
+              <option key={d.value} value={d.value}>{lang === "es" ? d.es : d.en}</option>
+            ))}
+          </select>
+        </ApplyField>
+        <ApplyField label={t("apply_location")} error={errors.city} required hint={t("apply_location_hint")}>
+          <LocationField
+            value={{ city: form.city, lat: form.lat, lng: form.lng }}
+            onChange={({ city, lat, lng }) => setForm((f) => ({ ...f, city, lat, lng }))}
+          />
+        </ApplyField>
         <div className="apply__row apply__row--2">
           <ApplyField label={t("apply_instagram")}>
             <input type="text" placeholder="@usuario" value={form.instagram} onChange={(e) => set("instagram", e.target.value)} />

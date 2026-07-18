@@ -753,6 +753,47 @@ class ArtworkFormFieldsTests(APITestCase):
         self.assertEqual(r.json()["sold_price"], "1500.00")
 
 
+class ProfileLocationTests(APITestCase):
+    def setUp(self):
+        self.artist = make_artist("loc-artist")
+
+    def _tok(self):
+        return self.client.post(
+            "/api/auth/login/", {"email": "loc-artist@x.mx", "password": "colibri123"}, format="json"
+        ).json()["token"]
+
+    def test_meta_exposes_mapbox_token(self):
+        self.assertIn("mapbox_token", self.client.get("/api/meta/").json())
+
+    def test_save_and_read_location(self):
+        r = self.client.patch(
+            "/api/dashboard/profile/",
+            {"city": "Coyoacán", "lat": 19.35, "lng": -99.16},
+            format="json", HTTP_AUTHORIZATION=f"Token {self._tok()}",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.artist.refresh_from_db()
+        self.assertIsNotNone(self.artist.point)
+        self.assertAlmostEqual(self.artist.point.y, 19.35, places=4)   # lat
+        self.assertAlmostEqual(self.artist.point.x, -99.16, places=4)  # lng
+        self.assertEqual(r.json()["city"], "Coyoacán")
+        self.assertAlmostEqual(r.json()["location"]["lat"], 19.35, places=4)
+
+    def test_clearing_location(self):
+        tok = self._tok()
+        self.client.patch(
+            "/api/dashboard/profile/", {"lat": 19.35, "lng": -99.16},
+            format="json", HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        r = self.client.patch(
+            "/api/dashboard/profile/", {"lat": None, "lng": None},
+            format="json", HTTP_AUTHORIZATION=f"Token {tok}",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.artist.refresh_from_db()
+        self.assertIsNone(self.artist.point)
+
+
 def _curator(email="curk@x.mx"):
     user = User.objects.create_user(username=email, password="colibri123")
     g, _ = Group.objects.get_or_create(name=settings.CURATOR_GROUP)

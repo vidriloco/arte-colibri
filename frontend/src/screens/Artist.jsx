@@ -5,6 +5,7 @@ import { useGo } from "../nav.js";
 import { Public } from "../api.js";
 import { useFetch } from "../hooks.js";
 import { ArtworkCard, SectionHead, Crumbs, Loading } from "../components/primitives.jsx";
+import { MiniMap } from "../components/MiniMap.jsx";
 import { useHead } from "../head.js";
 
 export function Artist() {
@@ -98,6 +99,13 @@ export function Artist() {
           </ul>
         </aside>
       </section>
+
+      {artist.location && (
+        <section className="artist__map">
+          <SectionHead title={t("location")} />
+          <MiniMap markers={[{ ...artist.location, label: artist.city }]} zoom={12} height={280} />
+        </section>
+      )}
 
       <SectionHead title={`${t("works_by")} ${firstName}`} />
       <section className="grid grid--3 grid--regular">

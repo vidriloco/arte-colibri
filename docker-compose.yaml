@@ -44,6 +44,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_S3_REGION: ${AWS_S3_REGION:-us-east-2}
       AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-arte-colibri}
+      # Mapbox public token for municipality search + maps (empty = maps off).
+      MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy

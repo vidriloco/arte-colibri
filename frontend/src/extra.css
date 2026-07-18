@@ -305,6 +305,25 @@
   .artdetail__row { grid-template-columns: 1fr; gap: 2px; }
 }
 
+/* Mapbox maps */
+.mini-map { width: 100%; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--hair); }
+.locations__map { margin: 0 0 32px; }
+.artist__map { margin-top: 8px; }
+.locfield { display: grid; gap: 10px; }
+.locfield__search { position: relative; }
+.locfield__results {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 30;
+  list-style: none; margin: 4px 0 0; padding: 4px;
+  background: #fff; border: 1px solid var(--hair); border-radius: var(--r-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); max-height: 240px; overflow-y: auto;
+}
+.locfield__results button {
+  display: block; width: 100%; text-align: left; padding: 8px 10px;
+  background: none; border: 0; cursor: pointer; font: inherit; color: inherit; border-radius: 4px;
+}
+.locfield__results button:hover { background: var(--panel); }
+.locfield__map { height: 220px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--hair); }
+
 /* Profile avatar upload */
 .avatar-upload { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .avatar-upload__img,

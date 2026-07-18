@@ -4,6 +4,7 @@ import { useGo } from "../nav.js";
 import { Public } from "../api.js";
 import { useFetch } from "../hooks.js";
 import { ArtworkCard, Crumbs, Loading, ErrorState, EmptyState } from "../components/primitives.jsx";
+import { MiniMap } from "../components/MiniMap.jsx";
 import { useSeoPage } from "../head.js";
 
 export function Locations() {
@@ -11,6 +12,15 @@ export function Locations() {
   const go = useGo();
   useSeoPage("locations");
   const { loading, error, data, reload } = useFetch(() => Public.locations(), []);
+  const artists = useFetch(() => Public.artists(), []);
+
+  const artistMarkers = ((artists.data?.results || artists.data || []) || [])
+    .filter((a) => a.location)
+    .map((a) => ({
+      ...a.location,
+      label: `${a.display_name}${a.city ? ` · ${a.city}` : ""}`,
+      onClick: () => go({ name: "artist", slug: a.slug }),
+    }));
 
   // Deep-link support: scroll to #region-<slug> once data is in.
   React.useEffect(() => {
@@ -37,6 +47,12 @@ export function Locations() {
             : "The collection grouped by the neighborhood where the artist resides."}
         </p>
       </header>
+
+      {artistMarkers.length > 0 && (
+        <div className="locations__map">
+          <MiniMap markers={artistMarkers} height={380} />
+        </div>
+      )}
 
       {loading ? (
         <Loading />

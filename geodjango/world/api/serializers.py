@@ -110,17 +110,28 @@ class ArtworkDetailSerializer(ArtworkListSerializer):
 
 
 # ── Public artist (read-only) ─────────────────────────────────────────────────
+def _point_to_location(point):
+    """A GEOS Point → `{lat, lng}` (or None). Point stores (x=lng, y=lat)."""
+    if not point:
+        return None
+    return {"lat": point.y, "lng": point.x}
+
+
 class ArtistMiniSerializer(serializers.ModelSerializer):
     discipline = BilingualField("discipline_es", "discipline_en", read_only=True)
     region = serializers.SlugRelatedField(slug_field="slug", read_only=True)
     avatar = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
 
     class Meta:
         model = Artist
         fields = [
             "slug", "display_name", "discipline", "city", "region",
-            "instagram", "tiktok", "web", "since", "avatar", "initials",
+            "instagram", "tiktok", "web", "since", "avatar", "initials", "location",
         ]
+
+    def get_location(self, obj):
+        return _point_to_location(obj.point)
 
     def get_avatar(self, obj):
         # Prefer the stored S3 URL; fall back to any legacy local avatar file.
@@ -258,12 +269,17 @@ class ArtistOwnerSerializer(serializers.ModelSerializer):
     # stores it on S3 and persists `avatar_url`. Not writable through this profile
     # serializer.
     avatar = serializers.SerializerMethodField()
+    # Location: read as {lat,lng}; written from the Mapbox picker's coordinates.
+    location = serializers.SerializerMethodField()
+    lat = serializers.FloatField(write_only=True, required=False, allow_null=True)
+    lng = serializers.FloatField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Artist
         fields = [
             "slug", "display_name", "discipline", "bio", "city", "region",
             "instagram", "tiktok", "web", "since", "avatar", "status", "review_notes",
+            "location", "lat", "lng",
         ]
         read_only_fields = ["slug", "status", "review_notes"]
 
@@ -274,6 +290,25 @@ class ArtistOwnerSerializer(serializers.ModelSerializer):
             return None
         request = self.context.get("request")
         return request.build_absolute_uri(obj.avatar.url) if request else obj.avatar.url
+
+    def get_location(self, obj):
+        return _point_to_location(obj.point)
+
+    def update(self, instance, validated):
+        # lat/lng are extra write-only inputs, not model fields — turn them into
+        # the GIS point before the normal field save. Both present → set/clear.
+        if "lat" in validated and "lng" in validated:
+            from django.contrib.gis.geos import Point
+
+            lat = validated.pop("lat")
+            lng = validated.pop("lng")
+            instance.point = (
+                Point(lng, lat, srid=4326) if lat is not None and lng is not None else None
+            )
+        else:
+            validated.pop("lat", None)
+            validated.pop("lng", None)
+        return super().update(instance, validated)
 
 
 # ── Curation ──────────────────────────────────────────────────────────────────

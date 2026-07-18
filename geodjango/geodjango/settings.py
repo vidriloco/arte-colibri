@@ -184,6 +184,10 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "")
 # Public site base URL (used for OpenRouter attribution headers, etc.).
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://artecolibri.mx")
 
+# Mapbox public token (pk.*) for the municipality search + maps. Public by
+# design (URL-restrict it in the Mapbox dashboard); the SPA reads it via /api/meta.
+MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN", "")
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── Django REST Framework — the JSON API the React SPA consumes ──────────────
