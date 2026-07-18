@@ -1,5 +1,6 @@
 """API views: public (published-only), auth/signup, dashboard, curation."""
 
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
@@ -23,6 +24,7 @@ from world.models import (
 )
 from world.models.seo import EDITABLE_KEYS
 from world.seo import resolve_public
+from world.turnstile import check_request as check_turnstile
 
 from .permissions import IsArtistOwner, IsCurator, is_curator
 from .serializers import (
@@ -105,6 +107,7 @@ class ArtworkViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[AllowAny])
     def inquiries(self, request, slug=None):
         artwork = self.get_object()  # 404 if not published
+        check_turnstile(request)
         ser = InquiryCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         ser.save(artwork=artwork)
@@ -179,6 +182,9 @@ class MetaView(APIView):
             {
                 "tags": TagSerializer(tags, many=True, context=ctx).data,
                 "regions": RegionSerializer(regions, many=True, context=ctx).data,
+                # Public site key for the SPA's Turnstile widgets; empty means
+                # Turnstile is disabled and forms submit without a token.
+                "turnstile_site_key": settings.TURNSTILE_SITE_KEY,
             }
         )
 
@@ -206,6 +212,7 @@ class SignupView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        check_turnstile(request)
         ser = SignupSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         user = ser.save()

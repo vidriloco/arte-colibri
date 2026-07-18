@@ -4,6 +4,7 @@ import { useLang } from "../i18n.jsx";
 import { useAuth } from "../auth.jsx";
 import { Dash } from "../api.js";
 import { ApplyField, ProfileForm, ArtworkForm } from "./forms.jsx";
+import { Turnstile, useTurnstileSiteKey } from "./Turnstile.jsx";
 
 function ApplyShell({ children, onClose }) {
   React.useEffect(() => {
@@ -46,6 +47,8 @@ function AccountStep({ onDone, onClose }) {
   const [terms, setTerms] = React.useState(false);
   const [errors, setErrors] = React.useState({});
   const [busy, setBusy] = React.useState(false);
+  const siteKey = useTurnstileSiteKey();
+  const [captcha, setCaptcha] = React.useState("");
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async (e) => {
@@ -58,11 +61,17 @@ function AccountStep({ onDone, onClose }) {
     else if (form.password.length < 8) er.password = t("acct_password_short");
     if (form.confirm !== form.password) er.confirm = t("acct_password_mismatch");
     if (!terms) er.terms = t("acct_terms_required");
+    if (siteKey && !captcha) er.turnstile = t("turnstile_err");
     setErrors(er);
     if (Object.keys(er).length || busy) return;
     setBusy(true);
     try {
-      await signup({ name: form.name, email: form.email, password: form.password });
+      await signup({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        turnstile_token: captcha,
+      });
       onDone();
     } catch (err) {
       setErrors(err.data && typeof err.data === "object" ? err.data : { email: t("error_b") });
@@ -98,6 +107,7 @@ function AccountStep({ onDone, onClose }) {
           <span>{t("acct_terms")}</span>
         </label>
         {errors.terms && <span className="apply__err apply__err--acct">{errors.terms}</span>}
+        <Turnstile siteKey={siteKey} onToken={setCaptcha} error={errors.turnstile} />
         <div className="apply__actions apply__actions--acct">
           <button type="button" className="btn btn--ghost" onClick={onClose}>{t("form_cancel")}</button>
           <button type="submit" className="btn btn--primary btn--lg" disabled={busy}>

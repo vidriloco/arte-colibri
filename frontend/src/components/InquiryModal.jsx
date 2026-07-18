@@ -1,6 +1,7 @@
 import React from "react";
 import { useLang, bi } from "../i18n.jsx";
 import { Public } from "../api.js";
+import { Turnstile, useTurnstileSiteKey } from "./Turnstile.jsx";
 
 export function InquiryModal({ work, onClose }) {
   const { lang, t } = useLang();
@@ -8,6 +9,8 @@ export function InquiryModal({ work, onClose }) {
   const [errors, setErrors] = React.useState({});
   const [submitted, setSubmitted] = React.useState(false);
   const [sending, setSending] = React.useState(false);
+  const siteKey = useTurnstileSiteKey();
+  const [captcha, setCaptcha] = React.useState("");
 
   React.useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -26,6 +29,7 @@ export function InquiryModal({ work, onClose }) {
     if (!form.email.trim()) e.email = t("form_required");
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = t("form_email_invalid");
     if (!form.message.trim()) e.message = t("form_required");
+    if (siteKey && !captcha) e.turnstile = t("turnstile_err");
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -35,7 +39,7 @@ export function InquiryModal({ work, onClose }) {
     if (!validate() || sending) return;
     setSending(true);
     try {
-      await Public.inquire(work.slug, form);
+      await Public.inquire(work.slug, { ...form, turnstile_token: captcha });
       setSubmitted(true);
     } catch (err) {
       setErrors(err.data && typeof err.data === "object" ? err.data : { message: t("error_b") });
@@ -76,6 +80,7 @@ export function InquiryModal({ work, onClose }) {
                           onChange={(e) => setForm({ ...form, message: e.target.value })} />
                 {errors.message && <span className="form__err">{errors.message}</span>}
               </label>
+              <Turnstile siteKey={siteKey} onToken={setCaptcha} error={errors.turnstile} />
               <div className="form__actions">
                 <button type="button" className="btn btn--ghost" onClick={onClose}>{t("form_cancel")}</button>
                 <button type="submit" className="btn btn--primary" disabled={sending}>{t("form_send")}</button>
