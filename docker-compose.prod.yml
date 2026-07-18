@@ -4,14 +4,21 @@
 # No bind mount here: the image's baked-in code is served as-is.
 services:
   app:
+    # Bind to loopback only: Apache terminates TLS on the host and proxies to
+    # 127.0.0.1:8100 (see deploy/apache/), so the app is never exposed directly.
     ports:
-      - "8100:8000"
+      - "127.0.0.1:8100:8000"
     environment:
-      # Takes effect once settings.py reads DJANGO_DEBUG (left to you — see review notes).
+      # Values interpolate from the .env file that scripts/prod.sh maintains.
       DJANGO_DEBUG: "False"
-    # Production WSGI server. REQUIRES `gunicorn` in requirements.txt; until you add it
-    # the image's default CMD (runserver) is used. Uncomment once gunicorn is installed:
-    # command: gunicorn --chdir geodjango geodjango.wsgi:application --bind 0.0.0.0:8000 --workers 3
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?missing — run scripts/prod.sh up to generate .env}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      # Cloudflare Turnstile (bot protection for public forms).
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+    # Production WSGI server (replaces the image's default runserver CMD).
+    command: gunicorn --chdir geodjango geodjango.wsgi:application --bind 0.0.0.0:8000 --workers 3
     deploy:
       resources:
         limits:

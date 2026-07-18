@@ -193,3 +193,22 @@ CORS_ALLOW_CREDENTIALS = True
 # Role group names used by the curation workflow.
 ARTIST_GROUP = "Artist"
 CURATOR_GROUP = "Curator"
+
+# ── Reverse proxy (Apache terminates TLS and forwards to gunicorn) ───────────
+# Apache sets X-Forwarded-Proto (see deploy/apache/arte-colibri.conf); trusting
+# it lets Django know the original request was HTTPS so secure cookies and
+# scheme-aware redirects work. CSRF origins are required by Django 4+ for
+# cross-checking POSTs (admin/dashboard logins) behind a proxied domain.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if o.strip()
+]
+
+# ── Cloudflare Turnstile (bot protection for public forms) ───────────────────
+# Empty values disable verification; set both via env (scripts/prod.sh keeps
+# them in .env). The site key is public (rendered in the SPA widget); the
+# secret key is used server-side against the siteverify endpoint.
+TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "")

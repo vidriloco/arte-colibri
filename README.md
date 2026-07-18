@@ -82,17 +82,33 @@ The SPA also keeps the head in sync during client-side navigation and language t
 
 ## Run it (Docker, prod)
 
-Server-injected SEO requires Django to serve the **built** SPA:
+One command deploys everything:
 
 ```bash
-npm --prefix frontend run build         # Vite builds with base=/static/ → frontend/dist
-docker compose -f docker-compose.yaml -f docker-compose.prod.yml up -d --build
-docker compose exec app python geodjango/manage.py collectstatic --noinput
+./scripts/prod.sh up
 ```
 
-Set via env (see `docker-compose.prod.yml`): `DJANGO_DEBUG=False`,
-`DJANGO_ALLOWED_HOSTS`, `DJANGO_SECRET_KEY`. WhiteNoise serves the hashed assets under
-`/static/`; Django serves the SEO-injected shell for every other route.
+That single shot: maintains a git-ignored `.env` (generates `DJANGO_SECRET_KEY`
+on first run, forces `DJANGO_DEBUG=False`, derives `DJANGO_ALLOWED_HOSTS` and
+`CSRF_TRUSTED_ORIGINS` from `APP_DOMAIN`, scaffolds the Cloudflare Turnstile
+keys), builds the image (a Node stage compiles the SPA with `base=/static/` and
+`collectstatic` runs at build time, so assets are always fresh), starts the
+stack, applies migrations, and — on a Debian/Ubuntu host with Apache — installs
+the vhost from `deploy/apache/` for `APP_DOMAIN` and reloads Apache.
+
+First deploy on a new server:
+
+```bash
+./scripts/prod.sh up                      # scaffolds .env, then:
+$EDITOR .env                              # set APP_DOMAIN + Turnstile keys
+./scripts/prod.sh up                      # full one-shot deploy
+./scripts/prod.sh manage createsuperuser  # once
+sudo certbot --apache -d <domain> -d www.<domain>   # TLS, once
+```
+
+Gunicorn serves the app on `127.0.0.1:8100` (loopback only); Apache terminates
+TLS in front. WhiteNoise serves the hashed assets under `/static/`; Django
+serves the SEO-injected shell for every other route.
 
 ## Tests
 

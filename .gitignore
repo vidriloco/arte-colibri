@@ -10,3 +10,6 @@ frontend/dist/
 # Local media uploads
 geodjango/media/
 media/
+
+# Deploy secrets (maintained by scripts/prod.sh)
+.env
