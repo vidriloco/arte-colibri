@@ -4,6 +4,26 @@ import { Public, Dash } from "../api.js";
 import { useFetch } from "../hooks.js";
 import { LocationField } from "./LocationField.jsx";
 
+// Hard ceiling on the raw upload the API accepts before it re-encodes/compresses
+// (mirrors world/imaging.py: UPLOAD_MAX_BYTES). We validate on the client so an
+// oversized or non-image file gives immediate, friendly feedback instead of a
+// slow round-trip that silently fails.
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+// Returns a localized error string when the file is unusable, or null when OK.
+function imageUploadError(file, t) {
+  if (file.type && !ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    return t("apply_image_bad_type");
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    const size = (file.size / (1024 * 1024)).toFixed(1);
+    const max = Math.floor(MAX_IMAGE_BYTES / (1024 * 1024));
+    return t("apply_image_too_large").replace("{size}", size).replace("{max}", max);
+  }
+  return null;
+}
+
 export const DISCIPLINES = [
   { value: "pintura", es: "Pintura", en: "Painting" },
   { value: "escultura", es: "Escultura", en: "Sculpture" },
@@ -242,6 +262,7 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
   const [errors, setErrors] = React.useState({});
   const [saving, setSaving] = React.useState(false);
   const [images, setImages] = React.useState(artwork?.images || []);
+  const [uploading, setUploading] = React.useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const toggleTag = (slug) =>
@@ -317,6 +338,13 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    const invalid = imageUploadError(file, t);
+    if (invalid) {
+      setErrors((x) => ({ ...x, image: invalid }));
+      return;
+    }
+    setErrors((x) => ({ ...x, image: null }));
+    setUploading(true);
     setSaving(true);
     try {
       const saved = await ensureSaved();
@@ -330,6 +358,7 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
       const msg = (d && typeof d === "object" && (d.image || d.detail)) || t("error_b");
       setErrors((x) => ({ ...x, image: msg }));
     } finally {
+      setUploading(false);
       setSaving(false);
     }
   };
@@ -448,12 +477,21 @@ export function ArtworkForm({ artwork, onSaved, submitLabel, onBack }) {
               <button type="button" className="apply__slot-x" onClick={() => removeImage(img.id)} aria-label={t("apply_image_remove")}>✕</button>
             </div>
           ))}
-          <label className="apply__slot apply__slot--sm">
-            <input type="file" accept="image/*" onChange={onUpload} hidden />
-            <svg className="apply__slot-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 16V4" /><path d="M8 8l4-4 4 4" /><rect x="4" y="16" width="16" height="4" rx="1" />
-            </svg>
-            <span className="apply__slot-lbl">{t("apply_image_drop")}</span>
+          <label className={"apply__slot apply__slot--sm" + (uploading ? " is-busy" : "")} aria-busy={uploading}>
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onUpload} disabled={uploading} hidden />
+            {uploading ? (
+              <>
+                <span className="apply__slot-spinner" aria-hidden="true" />
+                <span className="apply__slot-lbl">{t("apply_image_uploading")}</span>
+              </>
+            ) : (
+              <>
+                <svg className="apply__slot-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 16V4" /><path d="M8 8l4-4 4 4" /><rect x="4" y="16" width="16" height="4" rx="1" />
+                </svg>
+                <span className="apply__slot-lbl">{t("apply_image_drop")}</span>
+              </>
+            )}
           </label>
         </div>
         <p className="apply__hint">{t("apply_image_format")}</p>
